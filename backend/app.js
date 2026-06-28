@@ -28,6 +28,19 @@ app.use('/api/payments', protect, requireFirm, require('./src/routes/payments'))
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
+// Serve static assets in production
+if (process.env.NODE_ENV === 'production') {
+  const path = require('path');
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ message: 'API route not found' });
+    }
+    res.sendFile(path.resolve(__dirname, '../', 'frontend', 'dist', 'index.html'));
+  });
+}
+
 app.use(errorHandler);
 
 module.exports = app;
