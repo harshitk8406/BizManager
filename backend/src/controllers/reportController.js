@@ -1,7 +1,6 @@
 const Item = require('../models/Item');
 const Purchase = require('../models/Purchase');
 const Sale = require('../models/Sale');
-const mongoose = require('mongoose');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 /* ─── Stock Summary ────────────────────────────────────────── */
@@ -26,53 +25,84 @@ const getStockSummary = asyncHandler(async (req, res) => {
 /* ─── Stock / Purchase Detail ──────────────────────────────── */
 const getStockDetail = asyncHandler(async (req, res) => {
   const { from, to, itemCode } = req.query;
-  const firmObjId = new mongoose.Types.ObjectId(req.firmId);
-  let matchStage = { firm: firmObjId };
+  let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
     if (from) matchStage.date.$gte = new Date(from);
     if (to)   matchStage.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
   }
-  const pipeline = [
-    { $match: matchStage },
-    { $unwind: '$items' },
-    ...(itemCode ? [{ $match: { 'items.itemCode': itemCode } }] : []),
-    { $sort: { date: -1 } },
-    { $project: { _id: 0, date: 1, invoiceNumber: 1, supplierName: 1, supplierGST: 1,
-        itemCode: '$items.itemCode', itemName: '$items.itemName', hsnCode: '$items.hsnCode',
-        packingSize: '$items.packingSize', quantity: '$items.quantity', rate: '$items.rate',
-        gstPercentage: '$items.gstPercentage', taxableAmount: '$items.taxableAmount',
-        cgst: '$items.cgst', sgst: '$items.sgst', igst: '$items.igst',
-        totalTax: '$items.totalTax', amount: '$items.amount' } },
-  ];
-  const purchases = await Purchase.aggregate(pipeline);
-  res.json({ success: true, data: purchases, count: purchases.length });
+  const purchases = await Purchase.find(matchStage);
+  const result = [];
+  purchases.forEach(p => {
+    const pDate = p.date instanceof Date ? p.date : new Date(p.date);
+    (p.items || []).forEach(item => {
+      if (!itemCode || item.itemCode === itemCode) {
+        result.push({
+          date: pDate,
+          invoiceNumber: p.invoiceNumber,
+          supplierName: p.supplierName,
+          supplierGST: p.supplierGST,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          hsnCode: item.hsnCode,
+          packingSize: item.packingSize,
+          quantity: item.quantity,
+          rate: item.rate,
+          gstPercentage: item.gstPercentage,
+          taxableAmount: item.taxableAmount,
+          cgst: item.cgst,
+          sgst: item.sgst,
+          igst: item.igst,
+          totalTax: item.totalTax,
+          amount: item.amount
+        });
+      }
+    });
+  });
+  result.sort((a, b) => b.date - a.date);
+  res.json({ success: true, data: result, count: result.length });
 });
 
 /* ─── Sales Detail ─────────────────────────────────────────── */
 const getSalesDetail = asyncHandler(async (req, res) => {
   const { from, to, itemCode } = req.query;
-  const firmObjId = new mongoose.Types.ObjectId(req.firmId);
-  let matchStage = { firm: firmObjId };
+  let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
     if (from) matchStage.date.$gte = new Date(from);
     if (to)   matchStage.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
   }
-  const pipeline = [
-    { $match: matchStage },
-    { $unwind: '$items' },
-    ...(itemCode ? [{ $match: { 'items.itemCode': itemCode } }] : []),
-    { $sort: { date: -1 } },
-    { $project: { _id: 0, date: 1, invoiceNumber: 1, customerName: 1, customerGST: 1, isInterState: 1,
-        itemCode: '$items.itemCode', itemName: '$items.itemName', hsnCode: '$items.hsnCode',
-        packingSize: '$items.packingSize', quantity: '$items.quantity', rate: '$items.rate',
-        gstPercentage: '$items.gstPercentage', taxableAmount: '$items.taxableAmount',
-        cgst: '$items.cgst', sgst: '$items.sgst', igst: '$items.igst',
-        totalTax: '$items.totalTax', amount: '$items.amount' } },
-  ];
-  const sales = await Sale.aggregate(pipeline);
-  res.json({ success: true, data: sales, count: sales.length });
+  const sales = await Sale.find(matchStage);
+  const result = [];
+  sales.forEach(s => {
+    const sDate = s.date instanceof Date ? s.date : new Date(s.date);
+    (s.items || []).forEach(item => {
+      if (!itemCode || item.itemCode === itemCode) {
+        result.push({
+          date: sDate,
+          invoiceNumber: s.invoiceNumber,
+          customerName: s.customerName,
+          customerGST: s.customerGST,
+          isInterState: s.isInterState,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          hsnCode: item.hsnCode,
+          packingSize: item.packingSize,
+          quantity: item.quantity,
+          rate: item.rate,
+          gstPercentage: item.gstPercentage,
+          taxableAmount: item.taxableAmount,
+          cgst: item.cgst,
+          sgst: item.sgst,
+          igst: item.igst,
+          totalTax: item.totalTax,
+          amount: item.amount
+        });
+      }
+    });
+  });
+  result.sort((a, b) => b.date - a.date);
+  res.json({ success: true, data: result, count: result.length });
 });
 
 /* ─── GSTR-1 (Outward Supplies) ────────────────────────────── */
@@ -98,7 +128,17 @@ const getGSTR1 = asyncHandler(async (req, res) => {
     if (!b2bMap[key]) {
       b2bMap[key] = { gstNumber: sale.customerGST, customerName: sale.customerName, invoices: [], totalTaxable: 0, totalIgst: 0, totalCgst: 0, totalSgst: 0, totalTax: 0, grandTotal: 0 };
     }
-    b2bMap[key].invoices.push({ invoiceNumber: sale.invoiceNumber, date: sale.date, isInterState: sale.isInterState, taxableAmount: sale.subtotal || 0, igst: sale.totalIgst || 0, cgst: sale.totalCgst || 0, sgst: sale.totalSgst || 0, totalTax: sale.totalTax || 0, totalAmount: sale.totalAmount || 0 });
+    b2bMap[key].invoices.push({
+      invoiceNumber: sale.invoiceNumber,
+      date: sale.date,
+      isInterState: sale.isInterState,
+      taxableAmount: sale.subtotal || 0,
+      igst: sale.totalIgst || 0,
+      cgst: sale.totalCgst || 0,
+      sgst: sale.totalSgst || 0,
+      totalTax: sale.totalTax || 0,
+      totalAmount: sale.totalAmount || 0
+    });
     b2bMap[key].totalTaxable += sale.subtotal || 0;
     b2bMap[key].totalIgst    += sale.totalIgst || 0;
     b2bMap[key].totalCgst    += sale.totalCgst || 0;
@@ -116,7 +156,17 @@ const getGSTR1 = asyncHandler(async (req, res) => {
     totalSgst:    b2cSales.reduce((s, x) => s + (x.totalSgst || 0), 0),
     totalTax:     b2cSales.reduce((s, x) => s + (x.totalTax  || 0), 0),
     grandTotal:   b2cSales.reduce((s, x) => s + (x.totalAmount || 0), 0),
-    invoices: b2cSales.map(s => ({ invoiceNumber: s.invoiceNumber, date: s.date, customerName: s.customerName, taxableAmount: s.subtotal, totalTax: s.totalTax, totalAmount: s.totalAmount })),
+    invoices: b2cSales.map(s => ({
+      invoiceNumber: s.invoiceNumber,
+      date: s.date,
+      customerName: s.customerName,
+      taxableAmount: s.subtotal || 0,
+      cgst: s.totalCgst || 0,
+      sgst: s.totalSgst || 0,
+      igst: s.totalIgst || 0,
+      totalTax: s.totalTax || 0,
+      totalAmount: s.totalAmount || 0
+    })),
   };
 
   // HSN-wise summary from all sales
@@ -232,17 +282,18 @@ const getGSTR3B = asyncHandler(async (req, res) => {
 const getDashboardStats = asyncHandler(async (req, res) => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const firmObjId = new mongoose.Types.ObjectId(req.firmId);
-  const [items, recentPurchases, recentSales, monthlyPurchaseAgg, monthlySaleAgg] = await Promise.all([
+  const [items, recentPurchases, recentSales, monthlyPurchasesList, monthlySalesList] = await Promise.all([
     Item.find({ firm: req.firmId }).lean(),
     Purchase.find({ firm: req.firmId }).sort({ date: -1 }).limit(5).populate('supplier', 'supplierName').lean(),
     Sale.find({ firm: req.firmId }).sort({ date: -1 }).limit(5).populate('customer', 'customerName').lean(),
-    Purchase.aggregate([{ $match: { date: { $gte: startOfMonth }, firm: firmObjId } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
-    Sale.aggregate([{ $match: { date: { $gte: startOfMonth }, firm: firmObjId } }, { $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+    Purchase.find({ date: { $gte: startOfMonth }, firm: req.firmId }).lean(),
+    Sale.find({ date: { $gte: startOfMonth }, firm: req.firmId }).lean(),
   ]);
   const totalStockValue = items.reduce((s, i) => s + i.closingQuantity * i.purchasePrice, 0);
   const lowStockItems   = items.filter((i) => i.closingQuantity <= 0).length;
-  res.json({ success: true, data: { totalItems: items.length, totalStockValue: parseFloat(totalStockValue.toFixed(2)), lowStockItems, monthlyPurchases: monthlyPurchaseAgg[0]?.total || 0, monthlySales: monthlySaleAgg[0]?.total || 0, recentPurchases, recentSales } });
+  const monthlyPurchases = monthlyPurchasesList.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+  const monthlySales = monthlySalesList.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+  res.json({ success: true, data: { totalItems: items.length, totalStockValue: parseFloat(totalStockValue.toFixed(2)), lowStockItems, monthlyPurchases: parseFloat(monthlyPurchases.toFixed(2)), monthlySales: parseFloat(monthlySales.toFixed(2)), recentPurchases, recentSales } });
 });
 
 module.exports = { getStockSummary, getStockDetail, getSalesDetail, getGSTR1, getGSTR3B, getDashboardStats };

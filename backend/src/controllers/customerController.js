@@ -3,18 +3,35 @@ const { asyncHandler, createError } = require('../middleware/errorHandler');
 
 const getCustomers = asyncHandler(async (req, res) => {
   const { search } = req.query;
-  let query = { firm: req.firmId };
-  if (search) {
-    query = {
-      $or: [
-        { customerName: { $regex: search, $options: 'i' } },
-        { gstNumber: { $regex: search, $options: 'i' } },
-      ],
-      firm: req.firmId
-    };
+  const baseQuery = { firm: req.firmId };
+
+  if (!search) {
+    const customers = await Customer.find(baseQuery).limit(100).sort({ customerName: 1 }).lean();
+    return res.json({ success: true, data: customers });
   }
-  const customers = await Customer.find(query).limit(100).sort({ customerName: 1 }).lean();
-  res.json({ success: true, data: customers });
+
+  const prefixQuery = {
+    ...baseQuery,
+    customerName: { $regex: `^${search}`, $options: 'i' },
+  };
+  const containsQuery = {
+    ...baseQuery,
+    $or: [
+      { customerName: { $regex: search, $options: 'i' } },
+      { gstNumber:    { $regex: search, $options: 'i' } },
+    ],
+  };
+
+  const [prefixMatches, allMatches] = await Promise.all([
+    Customer.find(prefixQuery).sort({ customerName: 1 }).lean(),
+    Customer.find(containsQuery).limit(30).sort({ customerName: 1 }).lean(),
+  ]);
+
+  const prefixIds = new Set(prefixMatches.map(c => c._id));
+  const containsOnly = allMatches.filter(c => !prefixIds.has(c._id));
+  const merged = [...prefixMatches, ...containsOnly].slice(0, 30);
+
+  res.json({ success: true, data: merged });
 });
 
 const getCustomerById = asyncHandler(async (req, res) => {

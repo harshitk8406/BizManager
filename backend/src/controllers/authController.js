@@ -29,7 +29,7 @@ const register = asyncHandler(async (req, res) => {
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(password, salt);
 
-  const user = await User.create({ name, username: cleanUsername.toLowerCase(), password: hashedPassword });
+  const user = await User.create({ name, username: cleanUsername.toLowerCase(), password: hashedPassword, firms: [] });
 
   // Create initial firm for the user
   const firm = await Firm.create({
@@ -45,8 +45,9 @@ const register = asyncHandler(async (req, res) => {
   });
 
   // Link firm to user
+  if (!user.firms) user.firms = [];
   user.firms.push(firm._id);
-  await user.save();
+  await User.findOneAndUpdate({ _id: user._id }, { firms: user.firms });
 
   res.status(201).json({
     success: true,
@@ -103,7 +104,11 @@ const updateProfile = asyncHandler(async (req, res) => {
     user.password = await bcrypt.hash(password, salt);
   }
   
-  await user.save();
+  await User.findOneAndUpdate({ _id: user._id }, {
+    name: user.name,
+    username: user.username,
+    password: user.password
+  });
   
   res.json({
     success: true,

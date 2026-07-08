@@ -64,13 +64,13 @@ function Kbd({ children }) {
       display: 'inline-block',
       padding: '2px 7px',
       borderRadius: 5,
-      background: '#f3f4f6',
-      border: '1px solid #d1d5db',
-      borderBottom: '2px solid #9ca3af',
+      background: 'var(--bg-primary)',
+      border: '1px solid var(--border)',
+      borderBottom: '2px solid var(--text-muted)',
       fontFamily: 'monospace',
       fontSize: 11,
       fontWeight: 700,
-      color: '#111827',
+      color: 'var(--text-primary)',
       minWidth: 22,
       textAlign: 'center',
       lineHeight: 1.6,
@@ -98,7 +98,7 @@ export default function KeyboardHelp({ open, onClose }) {
       aria-label="Keyboard shortcuts"
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.55)',
+        background: 'rgba(0,0,0,0.65)',
         zIndex: 20000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
@@ -106,19 +106,24 @@ export default function KeyboardHelp({ open, onClose }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{
-        background: '#fff', borderRadius: 16, width: '100%', maxWidth: 720,
-        maxHeight: '88vh', overflowY: 'auto',
-        boxShadow: '0 24px 80px rgba(0,0,0,0.3)',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border)',
+        borderRadius: 16,
+        width: '100%',
+        maxWidth: 720,
+        maxHeight: '88vh',
+        overflowY: 'auto',
+        boxShadow: 'var(--shadow-lg)',
       }}>
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '18px 24px', borderBottom: '1px solid #e5e7eb',
-          position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+          padding: '18px 24px', borderBottom: '1px solid var(--border)',
+          position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 1,
         }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>Keyboard Shortcuts</div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--text-primary)' }}>Keyboard Shortcuts</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
               This app is fully keyboard-navigable. Press <Kbd>?</Kbd> anytime to open this guide.
             </div>
           </div>
@@ -126,9 +131,9 @@ export default function KeyboardHelp({ open, onClose }) {
             onClick={onClose}
             autoFocus
             style={{
-              background: '#f3f4f6', border: '1px solid #e5e7eb',
+              background: 'var(--bg-primary)', border: '1px solid var(--border)',
               borderRadius: 8, padding: '6px 14px',
-              fontWeight: 600, fontSize: 13, cursor: 'pointer', color: '#374151',
+              fontWeight: 600, fontSize: 13, cursor: 'pointer', color: 'var(--text-secondary)',
             }}
           >
             Close <Kbd>Esc</Kbd>
@@ -141,22 +146,22 @@ export default function KeyboardHelp({ open, onClose }) {
             <div key={section.title}>
               <div style={{
                 fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
-                letterSpacing: 1.2, color: '#16a34a', marginBottom: 10,
+                letterSpacing: 1.2, color: 'var(--accent-primary)', marginBottom: 10,
               }}>
                 {section.title}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {section.shortcuts.map((s, i) => (
                   <div key={i} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    display: 'flex', alignItems: 'center', justifycontent: 'space-between',
                     padding: '6px 10px', borderRadius: 8,
-                    background: '#f9fafb', border: '1px solid #f3f4f6',
+                    background: 'var(--card-hover)', border: '1px solid var(--border-light)',
                   }}>
-                    <span style={{ fontSize: 12.5, color: '#374151' }}>{s.label}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{s.label}</span>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
                       {s.keys.map((k, ki) => (
                         <span key={ki} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          {ki > 0 && <span style={{ fontSize: 10, color: '#9ca3af' }}>+</span>}
+                          {ki > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+</span>}
                           <Kbd>{k}</Kbd>
                         </span>
                       ))}
@@ -170,7 +175,7 @@ export default function KeyboardHelp({ open, onClose }) {
 
         <div style={{
           padding: '12px 24px 20px', textAlign: 'center',
-          fontSize: 11.5, color: '#9ca3af',
+          fontSize: 11.5, color: 'var(--text-muted)',
         }}>
           Tip: All navigation shortcuts use <Kbd>Alt</Kbd> + a letter. Forms save with <Kbd>Ctrl</Kbd>+<Kbd>Enter</Kbd>.
         </div>

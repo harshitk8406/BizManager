@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Payment = require('../models/Payment');
 const Customer = require('../models/Customer');
 const Supplier = require('../models/Supplier');
@@ -57,98 +56,63 @@ const getPayments = asyncHandler(async (req, res) => {
 });
 
 const getPaymentSummary = asyncHandler(async (req, res) => {
-  const firmObjectId = new mongoose.Types.ObjectId(req.firmId);
+  const payments = await Payment.find({ firm: req.firmId });
 
-  // Aggregate received payments
-  const receivedSummary = await Payment.aggregate([
-    { $match: { firm: firmObjectId, type: 'received' } },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-        cash: {
-          $sum: {
-            $cond: [{ $eq: ['$paymentMode', 'cash'] }, '$amount', 0]
-          }
-        },
-        bank: {
-          $sum: {
-            $cond: [{ $eq: ['$paymentMode', 'bank'] }, '$amount', 0]
-          }
-        }
-      }
+  const received = { total: 0, cash: 0, bank: 0 };
+  const sent = { total: 0, cash: 0, bank: 0 };
+
+  payments.forEach(p => {
+    if (p.type === 'received') {
+      received.total += p.amount || 0;
+      if (p.paymentMode === 'cash') received.cash += p.amount || 0;
+      else if (p.paymentMode === 'bank') received.bank += p.amount || 0;
+    } else if (p.type === 'sent') {
+      sent.total += p.amount || 0;
+      if (p.paymentMode === 'cash') sent.cash += p.amount || 0;
+      else if (p.paymentMode === 'bank') sent.bank += p.amount || 0;
     }
-  ]);
+  });
 
-  // Aggregate sent payments
-  const sentSummary = await Payment.aggregate([
-    { $match: { firm: firmObjectId, type: 'sent' } },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-        cash: {
-          $sum: {
-            $cond: [{ $eq: ['$paymentMode', 'cash'] }, '$amount', 0]
-          }
-        },
-        bank: {
-          $sum: {
-            $cond: [{ $eq: ['$paymentMode', 'bank'] }, '$amount', 0]
-          }
-        }
-      }
-    }
-  ]);
-
-  const received = receivedSummary[0] || { total: 0, cash: 0, bank: 0 };
-  const sent = sentSummary[0] || { total: 0, cash: 0, bank: 0 };
   const balance = received.total - sent.total;
 
   res.json({
     success: true,
     data: {
-      received: {
-        total: received.total,
-        cash: received.cash,
-        bank: received.bank
-      },
-      sent: {
-        total: sent.total,
-        cash: sent.cash,
-        bank: sent.bank
-      },
+      received,
+      sent,
       balance
     }
   });
 });
 
 const getPartyBalances = asyncHandler(async (req, res) => {
-  const firmObjectId = new mongoose.Types.ObjectId(req.firmId);
-
-  // 1. Customer balances: Sales - Payments Received
-  const customerSales = await Sale.aggregate([
-    { $match: { firm: firmObjectId } },
-    { $group: { _id: '$customer', totalSales: { $sum: '$totalAmount' } } }
+  const [sales, purchases, payments, customersList, suppliersList] = await Promise.all([
+    Sale.find({ firm: req.firmId }),
+    Purchase.find({ firm: req.firmId }),
+    Payment.find({ firm: req.firmId }),
+    Customer.find({ firm: req.firmId }).sort({ customerName: 1 }).lean(),
+    Supplier.find({ firm: req.firmId }).sort({ supplierName: 1 }).lean()
   ]);
 
-  const customerPayments = await Payment.aggregate([
-    { $match: { firm: firmObjectId, type: 'received', partyType: 'customer' } },
-    { $group: { _id: '$customer', totalPaid: { $sum: '$amount' } } }
-  ]);
-
-  const customersList = await Customer.find({ firm: req.firmId }).sort({ customerName: 1 }).lean();
-
+  // 1. Map sales by customer
   const salesMap = {};
-  customerSales.forEach(s => { if (s._id) salesMap[s._id.toString()] = s.totalSales; });
+  sales.forEach(s => {
+    if (s.customer) {
+      salesMap[s.customer] = (salesMap[s.customer] || 0) + (s.totalAmount || 0);
+    }
+  });
 
-  const paidMap = {};
-  customerPayments.forEach(p => { if (p._id) paidMap[p._id.toString()] = p.totalPaid; });
+  // 2. Map customer payments
+  const customerPaidMap = {};
+  payments.forEach(p => {
+    if (p.type === 'received' && p.partyType === 'customer' && p.customer) {
+      customerPaidMap[p.customer] = (customerPaidMap[p.customer] || 0) + (p.amount || 0);
+    }
+  });
 
   const customerBalances = customersList.map(c => {
-    const idStr = c._id.toString();
-    const totalSales = salesMap[idStr] || 0;
-    const totalPaid = paidMap[idStr] || 0;
+    const totalSales = salesMap[c._id] || 0;
+    const totalPaid = customerPaidMap[c._id] || 0;
     return {
       _id: c._id,
       name: c.customerName,
@@ -157,33 +121,29 @@ const getPartyBalances = asyncHandler(async (req, res) => {
       phone: c.customerPhone,
       totalSales,
       totalPaid,
-      balance: totalSales - totalPaid // Positive means customer owes us money
+      balance: totalSales - totalPaid
     };
   });
 
-  // 2. Supplier balances: Purchases - Payments Sent
-  const supplierPurchases = await Purchase.aggregate([
-    { $match: { firm: firmObjectId } },
-    { $group: { _id: '$supplier', totalPurchases: { $sum: '$totalAmount' } } }
-  ]);
-
-  const supplierPayments = await Payment.aggregate([
-    { $match: { firm: firmObjectId, type: 'sent', partyType: 'supplier' } },
-    { $group: { _id: '$supplier', totalPaid: { $sum: '$amount' } } }
-  ]);
-
-  const suppliersList = await Supplier.find({ firm: req.firmId }).sort({ supplierName: 1 }).lean();
-
+  // 3. Map purchases by supplier
   const purchasesMap = {};
-  supplierPurchases.forEach(p => { if (p._id) purchasesMap[p._id.toString()] = p.totalPurchases; });
+  purchases.forEach(p => {
+    if (p.supplier) {
+      purchasesMap[p.supplier] = (purchasesMap[p.supplier] || 0) + (p.totalAmount || 0);
+    }
+  });
 
-  const sentMap = {};
-  supplierPayments.forEach(p => { if (p._id) sentMap[p._id.toString()] = p.totalPaid; });
+  // 4. Map supplier payments
+  const supplierPaidMap = {};
+  payments.forEach(p => {
+    if (p.type === 'sent' && p.partyType === 'supplier' && p.supplier) {
+      supplierPaidMap[p.supplier] = (supplierPaidMap[p.supplier] || 0) + (p.amount || 0);
+    }
+  });
 
   const supplierBalances = suppliersList.map(s => {
-    const idStr = s._id.toString();
-    const totalPurchases = purchasesMap[idStr] || 0;
-    const totalPaid = sentMap[idStr] || 0;
+    const totalPurchases = purchasesMap[s._id] || 0;
+    const totalPaid = supplierPaidMap[s._id] || 0;
     return {
       _id: s._id,
       name: s.supplierName,
@@ -192,7 +152,7 @@ const getPartyBalances = asyncHandler(async (req, res) => {
       phone: s.supplierPhone,
       totalPurchases,
       totalPaid,
-      balance: totalPurchases - totalPaid // Positive means we owe supplier money
+      balance: totalPurchases - totalPaid
     };
   });
 

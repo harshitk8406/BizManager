@@ -2,7 +2,6 @@ const Purchase = require('../models/Purchase');
 const Sale = require('../models/Sale');
 const Item = require('../models/Item');
 const Supplier = require('../models/Supplier');
-const mongoose = require('mongoose');
 const { asyncHandler, createError } = require('../middleware/errorHandler');
 const { calculateItemAmount } = require('../utils/gst');
 
@@ -10,36 +9,40 @@ const recalculateStock = async (itemId, firmId) => {
   const item = await Item.findOne({ _id: itemId, firm: firmId });
   if (!item) return;
 
-  const firmObjId = new mongoose.Types.ObjectId(firmId);
+  const purchases = await Purchase.find({ firm: firmId });
+  let totalPurchased = 0;
+  let latestPurchasePrice = item.purchasePrice;
+  let latestPurchaseDate = null;
 
-  const purchaseAgg = await Purchase.aggregate([
-    { $unwind: '$items' },
-    { $match: { 'items.item': item._id, firm: firmObjId } },
-    { $group: { _id: null, total: { $sum: '$items.quantity' } } },
-  ]);
+  purchases.forEach(p => {
+    const pDate = p.date instanceof Date ? p.date : new Date(p.date);
+    (p.items || []).forEach(it => {
+      if (it.item === itemId) {
+        totalPurchased += it.quantity || 0;
+        if (!latestPurchaseDate || pDate > latestPurchaseDate) {
+          latestPurchaseDate = pDate;
+          latestPurchasePrice = it.rate;
+        }
+      }
+    });
+  });
 
-  const saleAgg = await Sale.aggregate([
-    { $unwind: '$items' },
-    { $match: { 'items.item': item._id, firm: firmObjId } },
-    { $group: { _id: null, total: { $sum: '$items.quantity' } } },
-  ]);
+  const sales = await Sale.find({ firm: firmId });
+  let totalSold = 0;
+  sales.forEach(s => {
+    (s.items || []).forEach(it => {
+      if (it.item === itemId) {
+        totalSold += it.quantity || 0;
+      }
+    });
+  });
 
-  const totalPurchased = purchaseAgg[0]?.total || 0;
-  const totalSold = saleAgg[0]?.total || 0;
-  item.closingQuantity = item.openingQuantity + totalPurchased - totalSold;
-
-  const latestPurchase = await Purchase.aggregate([
-    { $unwind: '$items' },
-    { $match: { 'items.item': item._id, firm: firmObjId } },
-    { $sort: { date: -1 } },
-    { $limit: 1 },
-    { $project: { rate: '$items.rate' } },
-  ]);
-  if (latestPurchase.length > 0) {
-    item.purchasePrice = latestPurchase[0].rate;
-  }
-
-  await item.save();
+  const closingQuantity = item.openingQuantity + totalPurchased - totalSold;
+  
+  await Item.findOneAndUpdate({ _id: itemId, firm: firmId }, {
+    closingQuantity,
+    purchasePrice: latestPurchasePrice
+  });
 };
 
 const getPurchases = asyncHandler(async (req, res) => {
@@ -107,14 +110,17 @@ const summarize = (processedItems) => ({
 const createPurchase = asyncHandler(async (req, res) => {
   const { supplier: supplierId, items, isInterState = false, ...rest } = req.body;
 
-  const existingInvoice = await Purchase.findOne({ supplier: supplierId, invoiceNumber: rest.invoiceNumber, firm: req.firmId });
-  if (existingInvoice) throw createError(`Invoice number ${rest.invoiceNumber} already exists for this supplier`, 400);
+  const existingInvoice = await Purchase.findOne({ invoiceNumber: rest.invoiceNumber, firm: req.firmId });
+  if (existingInvoice) throw createError(`Invoice number ${rest.invoiceNumber} already exists`, 400);
 
   const supplier = await Supplier.findOne({ _id: supplierId, firm: req.firmId });
   if (!supplier) throw createError('Supplier not found', 404);
 
   const processedItems = processItems(items, isInterState);
   const totals = summarize(processedItems);
+  if (req.body.roundOff) {
+    totals.totalAmount = Math.round(totals.totalAmount);
+  }
 
   const purchaseCode = await Purchase.generatePurchaseCode(req.firmId);
 
@@ -144,14 +150,17 @@ const updatePurchase = asyncHandler(async (req, res) => {
   const oldItemIds = existing.items.map((i) => i.item.toString());
   const { supplier: supplierId, items, isInterState = false, ...rest } = req.body;
 
-  const existingInvoice = await Purchase.findOne({ supplier: supplierId, invoiceNumber: rest.invoiceNumber, _id: { $ne: req.params.id }, firm: req.firmId });
-  if (existingInvoice) throw createError(`Invoice number ${rest.invoiceNumber} already exists for this supplier`, 400);
+  const existingInvoice = await Purchase.findOne({ invoiceNumber: rest.invoiceNumber, _id: { $ne: req.params.id }, firm: req.firmId });
+  if (existingInvoice) throw createError(`Invoice number ${rest.invoiceNumber} already exists`, 400);
 
   const supplier = await Supplier.findOne({ _id: supplierId, firm: req.firmId });
   if (!supplier) throw createError('Supplier not found', 404);
 
   const processedItems = processItems(items, isInterState);
   const totals = summarize(processedItems);
+  if (req.body.roundOff) {
+    totals.totalAmount = Math.round(totals.totalAmount);
+  }
 
   await Purchase.findOneAndUpdate({ _id: req.params.id, firm: req.firmId }, {
     ...rest,
@@ -177,7 +186,7 @@ const deletePurchase = asyncHandler(async (req, res) => {
   if (!purchase) throw createError('Purchase not found', 404);
 
   const itemIds = purchase.items.map((i) => i.item.toString());
-  await purchase.deleteOne();
+  await Purchase.findOneAndDelete({ _id: req.params.id, firm: req.firmId });
   await Promise.all(itemIds.map(id => recalculateStock(id, req.firmId)));
 
   res.json({ success: true, message: 'Purchase deleted successfully' });
@@ -194,25 +203,21 @@ const getNextInvoiceNumber = asyncHandler(async (req, res) => {
   const dateStr = `${year}${month}${day}`;
   const prefix = `PUR-${dateStr}-`;
 
-  const startOfDay = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
-  const endOfDay = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+  // Fetch ALL purchases for this firm and find the highest serial number globally
+  const allPurchases = await Purchase.find({ firm: req.firmId });
 
-  const lastPurchase = await Purchase.findOne({
-    firm: req.firmId,
-    date: { $gte: startOfDay, $lte: endOfDay },
-    invoiceNumber: { $regex: `^${prefix}` }
-  }).sort({ createdAt: -1, invoiceNumber: -1 }).lean();
-
-  let nextSerial = 1;
-  if (lastPurchase && lastPurchase.invoiceNumber) {
-    const parts = lastPurchase.invoiceNumber.split('-');
-    const lastSerialStr = parts[parts.length - 1];
-    const lastSerial = parseInt(lastSerialStr, 10);
-    if (!isNaN(lastSerial)) {
-      nextSerial = lastSerial + 1;
+  let maxSerial = 0;
+  (allPurchases || []).forEach(p => {
+    if (p.invoiceNumber) {
+      const parts = p.invoiceNumber.split('-');
+      const serial = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(serial) && serial > maxSerial) {
+        maxSerial = serial;
+      }
     }
-  }
+  });
 
+  const nextSerial = maxSerial + 1;
   const nextInvoiceNumber = `${prefix}${String(nextSerial).padStart(4, '0')}`;
   res.json({ success: true, data: nextInvoiceNumber });
 });

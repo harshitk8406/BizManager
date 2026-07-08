@@ -32,3 +32,16 @@ lerna-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Electron build output
+dist-desktop/
+
+# Local databases & external binaries
+mongodb-*/
+*.zip
+*.db
+*.exe
+resources/bin/
+resources/cloudflared*
+
+

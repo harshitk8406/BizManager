@@ -15,7 +15,7 @@ const EMPTY_FORM = {
   openingQuantity: 0,
   purchasePrice: 0,
   salesPrice: 0,
-  gstPercentage: 18,
+  gstPercentage: 5,
 };
 
 const GST_SLABS = [0, 5, 12, 18, 28];

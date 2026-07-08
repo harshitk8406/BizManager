@@ -326,6 +326,17 @@ export default function SaleList() {
                   ? <div className="totals-row"><span>IGST</span><span className="value">{formatCurrency(viewModal.totalIgst)}</span></div>
                   : <><div className="totals-row"><span>CGST</span><span className="value">{formatCurrency(viewModal.totalCgst)}</span></div>
                     <div className="totals-row"><span>SGST</span><span className="value">{formatCurrency(viewModal.totalSgst)}</span></div></>}
+                {(() => {
+                  const rawTotal = (viewModal.subtotal || 0) + (viewModal.totalTax || 0);
+                  const roundOffAmt = viewModal.totalAmount - rawTotal;
+                  if (Math.abs(roundOffAmt) < 0.001) return null;
+                  return (
+                    <div className="totals-row roundoff">
+                      <span>Round Off</span>
+                      <span className="value">{roundOffAmt > 0 ? '+' : ''}{formatCurrency(roundOffAmt)}</span>
+                    </div>
+                  );
+                })()}
                 <div className="totals-row total"><span>Grand Total</span><span className="value">{formatCurrency(viewModal.totalAmount)}</span></div>
               </div>
             </div>

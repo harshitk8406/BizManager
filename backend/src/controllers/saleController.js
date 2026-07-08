@@ -2,7 +2,6 @@ const Sale = require('../models/Sale');
 const Purchase = require('../models/Purchase');
 const Item = require('../models/Item');
 const Customer = require('../models/Customer');
-const mongoose = require('mongoose');
 const { asyncHandler, createError } = require('../middleware/errorHandler');
 const { calculateItemAmount } = require('../utils/gst');
 
@@ -10,24 +9,40 @@ const recalculateStock = async (itemId, firmId) => {
   const item = await Item.findOne({ _id: itemId, firm: firmId });
   if (!item) return;
 
-  const firmObjId = new mongoose.Types.ObjectId(firmId);
+  const purchases = await Purchase.find({ firm: firmId });
+  let totalPurchased = 0;
+  purchases.forEach(p => {
+    (p.items || []).forEach(it => {
+      if (it.item === itemId) {
+        totalPurchased += it.quantity || 0;
+      }
+    });
+  });
 
-  const purchaseAgg = await Purchase.aggregate([
-    { $unwind: '$items' },
-    { $match: { 'items.item': item._id, firm: firmObjId } },
-    { $group: { _id: null, total: { $sum: '$items.quantity' } } },
-  ]);
+  const sales = await Sale.find({ firm: firmId });
+  let totalSold = 0;
+  sales.forEach(s => {
+    (s.items || []).forEach(it => {
+      if (it.item === itemId) {
+        totalSold += it.quantity || 0;
+      }
+    });
+  });
 
-  const saleAgg = await Sale.aggregate([
-    { $unwind: '$items' },
-    { $match: { 'items.item': item._id, firm: firmObjId } },
-    { $group: { _id: null, total: { $sum: '$items.quantity' } } },
-  ]);
+  const closingQuantity = item.openingQuantity + totalPurchased - totalSold;
+  await Item.findOneAndUpdate({ _id: itemId, firm: firmId }, { closingQuantity });
+};
 
-  const totalPurchased = purchaseAgg[0]?.total || 0;
-  const totalSold = saleAgg[0]?.total || 0;
-  item.closingQuantity = item.openingQuantity + totalPurchased - totalSold;
-  await item.save();
+// Update salesPrice in Item Master when a sale is saved
+const updateItemSalesPrice = async (items, firmId) => {
+  await Promise.all(
+    items.map(i =>
+      Item.findOneAndUpdate(
+        { _id: i.item, firm: firmId },
+        { salesPrice: Number(i.rate) }
+      )
+    )
+  );
 };
 
 const getSales = asyncHandler(async (req, res) => {
@@ -103,6 +118,9 @@ const createSale = asyncHandler(async (req, res) => {
 
   const processedItems = processItems(items, isInterState);
   const totals = summarize(processedItems);
+  if (req.body.roundOff) {
+    totals.totalAmount = Math.round(totals.totalAmount);
+  }
 
   const saleCode = await Sale.generateSaleCode(req.firmId);
 
@@ -121,6 +139,7 @@ const createSale = asyncHandler(async (req, res) => {
   });
 
   await Promise.all([...new Set(items.map((i) => i.item))].map(id => recalculateStock(id, req.firmId)));
+  await updateItemSalesPrice(items, req.firmId);
 
   res.status(201).json({ success: true, data: sale });
 });
@@ -140,6 +159,9 @@ const updateSale = asyncHandler(async (req, res) => {
 
   const processedItems = processItems(items, isInterState);
   const totals = summarize(processedItems);
+  if (req.body.roundOff) {
+    totals.totalAmount = Math.round(totals.totalAmount);
+  }
 
   await Sale.findOneAndUpdate({ _id: req.params.id, firm: req.firmId }, {
     ...rest,
@@ -155,6 +177,7 @@ const updateSale = asyncHandler(async (req, res) => {
 
   const allItemIds = [...new Set([...oldItemIds, ...items.map((i) => i.item)])];
   await Promise.all(allItemIds.map(id => recalculateStock(id, req.firmId)));
+  await updateItemSalesPrice(items, req.firmId);
 
   const updated = await Sale.findOne({ _id: req.params.id, firm: req.firmId }).populate('customer').lean();
   res.json({ success: true, data: updated });
@@ -165,7 +188,7 @@ const deleteSale = asyncHandler(async (req, res) => {
   if (!sale) throw createError('Sale not found', 404);
 
   const itemIds = sale.items.map((i) => i.item.toString());
-  await sale.deleteOne();
+  await Sale.findOneAndDelete({ _id: req.params.id, firm: req.firmId });
   await Promise.all(itemIds.map(id => recalculateStock(id, req.firmId)));
 
   res.json({ success: true, message: 'Sale deleted successfully' });
@@ -182,26 +205,21 @@ const getNextInvoiceNumber = asyncHandler(async (req, res) => {
   const dateStr = `${year}${month}${day}`;
   const prefix = `INV-${dateStr}-`;
 
-  // Find the last invoice number for this firm on this date
-  const startOfDay = new Date(new Date(targetDate).setHours(0, 0, 0, 0));
-  const endOfDay = new Date(new Date(targetDate).setHours(23, 59, 59, 999));
+  // Fetch ALL sales for this firm and find the highest serial number globally
+  const allSales = await Sale.find({ firm: req.firmId });
 
-  const lastSale = await Sale.findOne({
-    firm: req.firmId,
-    date: { $gte: startOfDay, $lte: endOfDay },
-    invoiceNumber: { $regex: `^${prefix}` }
-  }).sort({ createdAt: -1, invoiceNumber: -1 }).lean();
-
-  let nextSerial = 1;
-  if (lastSale && lastSale.invoiceNumber) {
-    const parts = lastSale.invoiceNumber.split('-');
-    const lastSerialStr = parts[parts.length - 1];
-    const lastSerial = parseInt(lastSerialStr, 10);
-    if (!isNaN(lastSerial)) {
-      nextSerial = lastSerial + 1;
+  let maxSerial = 0;
+  (allSales || []).forEach(s => {
+    if (s.invoiceNumber) {
+      const parts = s.invoiceNumber.split('-');
+      const serial = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(serial) && serial > maxSerial) {
+        maxSerial = serial;
+      }
     }
-  }
+  });
 
+  const nextSerial = maxSerial + 1;
   const nextInvoiceNumber = `${prefix}${String(nextSerial).padStart(4, '0')}`;
   res.json({ success: true, data: nextInvoiceNumber });
 });

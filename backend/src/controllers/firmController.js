@@ -10,8 +10,8 @@ const getMyFirms = asyncHandler(async (req, res) => {
 const createFirm = asyncHandler(async (req, res) => {
   const firm = await Firm.create({ ...req.body, owner: req.user._id });
   
-  // Add firm to user's firms array
-  await User.findByIdAndUpdate(req.user._id, { $push: { firms: firm._id } });
+  // Add firm to user's firms array (use findOneAndUpdate — NeDB wrapper compatible)
+  await User.findOneAndUpdate({ _id: req.user._id }, { $push: { firms: firm._id } });
 
   res.status(201).json({ success: true, data: firm });
 });

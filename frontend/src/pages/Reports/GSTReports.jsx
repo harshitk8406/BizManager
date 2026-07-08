@@ -28,7 +28,7 @@ function TaxRow({ label, taxable, cgst, sgst, igst, tax, isHeader = false }) {
 function SectionHeader({ title, subtitle }) {
   return (
     <div style={{ 
-      background: 'linear-gradient(90deg, #f8fafc 0%, #ffffff 100%)', 
+      background: 'linear-gradient(90deg, var(--bg-primary) 0%, var(--bg-secondary) 100%)', 
       borderLeft: '4px solid var(--accent-primary)',
       padding: '12px 18px', 
       borderRadius: '4px var(--radius-md) var(--radius-md) 4px', 
@@ -99,82 +99,119 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
       .finally(() => setLoading(false));
   };
 
+  // Auto-load on mount with current month
+  useEffect(() => { handleGenerate(); }, []);
+
   const handleDownloadJSON = () => {
     if (!data) return;
     const mStr = String(month).padStart(2, '0');
     const fp = `${mStr}${year}`;
+    const gstin = activeFirm?.gstin || '';
+    const stateCode = gstin.substring(0, 2);
 
     const formatDateForGST = (dateStr) => {
       if (!dateStr) return '';
       const d = new Date(dateStr);
       const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      return `${day}-${month}-${year}`;
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const yr = d.getFullYear();
+      return `${day}-${mo}-${yr}`;
     };
 
-    const calculateEffectiveGSTRate = (inv) => {
-      if (!inv.taxableAmount) return 18;
-      return Math.round((inv.totalTax / inv.taxableAmount) * 100);
-    };
+    // Calculate grand total from all invoices
+    const allB2BTotal = data.b2b.reduce((s, c) => s + c.invoices.reduce((ss, inv) => ss + inv.totalAmount, 0), 0);
+    const b2cTotal = data.b2c?.invoices?.reduce((s, inv) => s + inv.totalAmount, 0) || 0;
+    const grandTotal = parseFloat((allB2BTotal + b2cTotal).toFixed(2));
+
+    // Group B2C invoices by GST rate and supply type (INTRA/INTER)
+    const b2cGrouped = {};
+    (data.b2c?.invoices || []).forEach(inv => {
+      const rate = inv.totalTax && inv.taxableAmount
+        ? Math.round((inv.totalTax / inv.taxableAmount) * 100)
+        : 18;
+      const splyTy = inv.isInterState ? 'INTER' : 'INTRA';
+      const pos = inv.isInterState ? (inv.customerGST || '').substring(0, 2) || stateCode : stateCode;
+      const key = `${rate}_${splyTy}_${pos}`;
+      if (!b2cGrouped[key]) {
+        b2cGrouped[key] = { rt: rate, sply_ty: splyTy, pos, txval: 0, iamt: 0, camt: 0, samt: 0 };
+      }
+      b2cGrouped[key].txval += inv.taxableAmount || 0;
+      b2cGrouped[key].iamt  += inv.igst || 0;
+      b2cGrouped[key].camt  += inv.cgst || 0;
+      b2cGrouped[key].samt  += inv.sgst || 0;
+    });
+    const b2csArray = Object.values(b2cGrouped).map(g => ({
+      rt:     parseFloat(g.rt),
+      sply_ty: g.sply_ty,
+      pos:    g.pos,
+      txval:  parseFloat(g.txval.toFixed(2)),
+      iamt:   parseFloat(g.iamt.toFixed(2)),
+      camt:   parseFloat(g.camt.toFixed(2)),
+      samt:   parseFloat(g.samt.toFixed(2)),
+    }));
 
     const gstr1Payload = {
-      gstin: activeFirm?.gstin || "08ANEPK2132Q2ZR",
-      fp: fp,
-      gt: 0.0,
-      cur_gt: 0.0,
+      version: "GST3.0.4",
+      hash:    "hash",
+      gstin:   gstin,
+      fp:      fp,
+      gt:      grandTotal,
+      cur_gt:  grandTotal,
       b2b: data.b2b.map(cust => ({
         ctin: cust.gstNumber,
-        inv: cust.invoices.map(inv => ({
-          inum: inv.invoiceNumber,
-          idt: formatDateForGST(inv.date),
-          val: parseFloat(inv.totalAmount.toFixed(2)),
-          pos: cust.gstNumber.substring(0, 2),
-          rchrg: "N",
-          inv_typ: "R",
-          itms: [
-            {
+        inv: cust.invoices.map(inv => {
+          const rate = inv.totalTax && inv.taxableAmount
+            ? Math.round((inv.totalTax / inv.taxableAmount) * 100)
+            : 18;
+          return {
+            inum:    String(inv.invoiceNumber),
+            idt:     formatDateForGST(inv.date),
+            val:     parseFloat(inv.totalAmount.toFixed(2)),
+            pos:     cust.gstNumber.substring(0, 2),
+            rchrg:   "N",
+            inv_typ: "R",
+            itms: [{
               num: 1,
               itm_det: {
-                rt: calculateEffectiveGSTRate(inv),
+                rt:    parseFloat(rate),
                 txval: parseFloat(inv.taxableAmount.toFixed(2)),
-                iamt: parseFloat((inv.igst || 0).toFixed(2)),
-                camt: parseFloat((inv.cgst || 0).toFixed(2)),
-                samt: parseFloat((inv.sgst || 0).toFixed(2))
+                iamt:  parseFloat((inv.igst  || 0).toFixed(2)),
+                camt:  parseFloat((inv.cgst  || 0).toFixed(2)),
+                samt:  parseFloat((inv.sgst  || 0).toFixed(2)),
+                csamt: 0.00,
               }
-            }
-          ]
-        }))
+            }]
+          };
+        })
       })),
-      b2cs: data.b2c.invoices.length > 0 ? [{
-        rt: 18.0,
-        sply_ty: "INTRA",
-        pos: (activeFirm?.gstin || "08ANEPK2132Q2ZR").substring(0, 2),
-        txval: parseFloat(data.b2c.totalTaxable.toFixed(2)),
-        camt: parseFloat(data.b2c.totalCgst.toFixed(2)),
-        samt: parseFloat(data.b2c.totalSgst.toFixed(2)),
-        iamt: parseFloat(data.b2c.totalIgst.toFixed(2))
-      }] : [],
+      b2cs: b2csArray,
       hsn: {
-        data: data.hsnSummary.map((h, index) => ({
-          num: index + 1,
-          hsn_sc: h.hsnCode,
-          desc: h.description,
-          uqc: "OTH",
-          qty: parseFloat(h.totalQuantity.toFixed(2)),
-          val: parseFloat(h.totalAmount.toFixed(2)),
-          txval: parseFloat(h.totalTaxable.toFixed(2)),
-          iamt: parseFloat(h.totalIgst.toFixed(2)),
-          camt: parseFloat(h.totalCgst.toFixed(2)),
-          samt: parseFloat(h.totalSgst.toFixed(2))
-        }))
+        data: data.hsnSummary.map((h, index) => {
+          const rate = h.totalTaxable
+            ? Math.round(((h.totalCgst + h.totalSgst + h.totalIgst) / h.totalTaxable) * 100)
+            : 0;
+          return {
+            num:    index + 1,
+            hsn_sc: String(h.hsnCode),
+            desc:   h.description || "NA",
+            uqc:    "OTH",
+            qty:    parseFloat(h.totalQuantity.toFixed(2)),
+            val:    parseFloat(h.totalAmount.toFixed(2)),
+            txval:  parseFloat(h.totalTaxable.toFixed(2)),
+            iamt:   parseFloat(h.totalIgst.toFixed(2)),
+            camt:   parseFloat(h.totalCgst.toFixed(2)),
+            samt:   parseFloat(h.totalSgst.toFixed(2)),
+            csamt:  0.00,
+            rt:     parseFloat(rate),
+          };
+        })
       }
     };
 
     const blob = new Blob([JSON.stringify(gstr1Payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const filename = `${activeFirm?.gstin || '08ANEPK2132Q2ZR'}.json`;
+    const filename = `${gstin || 'GSTR1'}.json`;
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
@@ -201,7 +238,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
     csvContent += '--- SECTION 2: B2C Invoices (Unregistered / Retail Customers) ---\n';
     csvContent += 'Invoice No.,Date,Customer,Taxable,CGST,SGST,IGST,Total Tax,Total\n';
     data.b2c.invoices.forEach(inv => {
-      csvContent += `"${inv.invoiceNumber}","${formatDate(inv.date)}","${inv.customerName}",${inv.taxableAmount},${data.b2c.totalCgst / (data.b2c.count || 1)},${data.b2c.totalSgst / (data.b2c.count || 1)},${data.b2c.totalIgst / (data.b2c.count || 1)},${inv.totalTax},${inv.totalAmount}\n`;
+      csvContent += `"${inv.invoiceNumber}","${formatDate(inv.date)}","${inv.customerName}",${inv.taxableAmount},${inv.cgst || 0},${inv.sgst || 0},${inv.igst || 0},${inv.totalTax},${inv.totalAmount}\n`;
     });
     // B2C total
     if (data.b2c.count > 0) {
@@ -244,7 +281,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
     html += '<h3>Section 2: B2C Invoices (Retail Customers)</h3>';
     html += '<table><thead><tr><th>Invoice No.</th><th>Date</th><th>Customer</th><th>Taxable</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Total Tax</th><th>Total</th></tr></thead><tbody>';
     data.b2c.invoices.forEach(inv => {
-      html += `<tr><td>${inv.invoiceNumber}</td><td>${formatDate(inv.date)}</td><td>${inv.customerName}</td><td align="right">${inv.taxableAmount.toFixed(2)}</td><td align="right">${(data.b2c.totalCgst / (data.b2c.count || 1)).toFixed(2)}</td><td align="right">${(data.b2c.totalSgst / (data.b2c.count || 1)).toFixed(2)}</td><td align="right">${(data.b2c.totalIgst / (data.b2c.count || 1)).toFixed(2)}</td><td align="right">${inv.totalTax.toFixed(2)}</td><td align="right">${inv.totalAmount.toFixed(2)}</td></tr>`;
+      html += `<tr><td>${inv.invoiceNumber}</td><td>${formatDate(inv.date)}</td><td>${inv.customerName}</td><td align="right">${(inv.taxableAmount || 0).toFixed(2)}</td><td align="right">${(inv.cgst || 0).toFixed(2)}</td><td align="right">${(inv.sgst || 0).toFixed(2)}</td><td align="right">${(inv.igst || 0).toFixed(2)}</td><td align="right">${(inv.totalTax || 0).toFixed(2)}</td><td align="right">${(inv.totalAmount || 0).toFixed(2)}</td></tr>`;
     });
     if (data.b2c.count > 0) {
       html += `<tr style="font-weight:bold; background:#f3f4f6;"><td>B2C Total</td><td></td><td>${data.b2c.count} invoices</td><td align="right">${data.b2c.totalTaxable.toFixed(2)}</td><td align="right">${data.b2c.totalCgst.toFixed(2)}</td><td align="right">${data.b2c.totalSgst.toFixed(2)}</td><td align="right">${data.b2c.totalIgst.toFixed(2)}</td><td align="right">${data.b2c.totalTax.toFixed(2)}</td><td align="right">${data.b2c.grandTotal.toFixed(2)}</td></tr>`;
@@ -422,7 +459,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', alignItems: 'flex-end' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Period Type</label>
-              <select className="form-control" value={periodType} onChange={e => setPeriodType(e.target.value)} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <select className="form-control" value={periodType} onChange={e => setPeriodType(e.target.value)} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
               </select>
@@ -430,7 +467,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
             {periodType === 'monthly' ? (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Month</label>
-                <select className="form-control" value={month} onChange={e => setMonth(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+                <select className="form-control" value={month} onChange={e => setMonth(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                   <option value={1}>January</option><option value={2}>February</option><option value={3}>March</option>
                   <option value={4}>April</option><option value={5}>May</option><option value={6}>June</option>
                   <option value={7}>July</option><option value={8}>August</option><option value={9}>September</option>
@@ -440,7 +477,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
             ) : (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Quarter</label>
-                <select className="form-control" value={quarter} onChange={e => setQuarter(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+                <select className="form-control" value={quarter} onChange={e => setQuarter(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                   <option value={1}>Q1 (Jan - Mar)</option>
                   <option value={2}>Q2 (Apr - Jun)</option>
                   <option value={3}>Q3 (Jul - Sep)</option>
@@ -450,7 +487,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
             )}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Year</label>
-              <select className="form-control" value={year} onChange={e => setYear(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <select className="form-control" value={year} onChange={e => setYear(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                 {[...Array(10)].map((_, i) => {
                   const y = new Date().getFullYear() - 5 + i;
                   return <option key={y} value={y}>{y}</option>;
@@ -500,11 +537,11 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
             }}>
               {/* Left Side Actions */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <button className="btn btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                   Print
                 </button>
-                <button className="btn btn-secondary" onClick={() => setShowCharts(!showCharts)} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={() => setShowCharts(!showCharts)} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   {showCharts ? (
                     <>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -518,11 +555,11 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
                   )}
                 </button>
                 <span style={{ width: '1px', height: '24px', background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }} />
-                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                   CSV
                 </button>
-                <button className="btn btn-secondary" onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                   Excel
                 </button>
@@ -567,7 +604,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
               { label: 'Grand Total', value: formatCurrency(data.totals.grandTotal), sub: 'Gross sales value', color: '#2563eb', bg: 'rgba(37, 99, 235, 0.05)', icon: 'GR' }
             ].map((stat, idx) => (
               <div key={idx} style={{
-                background: '#fff',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: '20px',
@@ -627,7 +664,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
 
           {/* B2B */}
           <div className="card mb-16" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '16px 20px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
               <SectionHeader title="4A — B2B Invoices (Registered Customers)" subtitle="Sales to GST-registered businesses" />
             </div>
             <div className="table-wrapper">
@@ -663,7 +700,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
 
           {/* B2C */}
           <div className="card mb-16" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '16px 20px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
               <SectionHeader title="5 — B2C Invoices (Retail / Unregistered Customers)" subtitle="Sales to cash / unregistered customers" />
             </div>
             <div className="table-wrapper">
@@ -684,9 +721,9 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
                       <td style={{ padding: '12px 14px' }}>{formatDate(inv.date)}</td>
                       <td style={{ padding: '12px 14px' }}>{inv.customerName}</td>
                       <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.taxableAmount)}</td>
-                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(data.b2c.totalCgst / (data.b2c.count || 1))}</td>
-                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(data.b2c.totalSgst / (data.b2c.count || 1))}</td>
-                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(data.b2c.totalIgst / (data.b2c.count || 1))}</td>
+                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.cgst)}</td>
+                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.sgst)}</td>
+                      <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.igst)}</td>
                       <td className="text-right text-warning fw-600" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.totalTax)}</td>
                       <td className="text-right text-accent fw-700" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(inv.totalAmount)}</td>
                     </tr>
@@ -709,7 +746,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
 
           {/* HSN Summary */}
           <div className="card" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '16px 20px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
               <SectionHeader title="12 — HSN-wise Summary" subtitle="Summary of outward supplies organised by HSN code" />
             </div>
             <div className="table-wrapper">
@@ -744,7 +781,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
       )}
 
       {!data && !loading && (
-        <div className="empty-state" style={{ minHeight: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="empty-state" style={{ minHeight: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(22, 163, 74, 0.08)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, marginBottom: '16px' }}>G1</div>
           <div className="empty-title" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>Select Period &amp; Generate GSTR-1</div>
           <div className="empty-subtitle" style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '380px', lineHeight: '1.5' }}>Choose the tax period type, month/quarter, and year above, then click the Generate button to load outward supplies.</div>
@@ -792,6 +829,9 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
       .catch(e => show(e.message, 'error'))
       .finally(() => setLoading(false));
   };
+
+  // Auto-load on mount with current month
+  useEffect(() => { handleGenerate(); }, []);
 
   const handleDownloadJSON = () => {
     if (!data) return;
@@ -1103,7 +1143,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', alignItems: 'flex-end' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Period Type</label>
-              <select className="form-control" value={periodType} onChange={e => setPeriodType(e.target.value)} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <select className="form-control" value={periodType} onChange={e => setPeriodType(e.target.value)} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
               </select>
@@ -1111,7 +1151,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
             {periodType === 'monthly' ? (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Month</label>
-                <select className="form-control" value={month} onChange={e => setMonth(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+                <select className="form-control" value={month} onChange={e => setMonth(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                   <option value={1}>January</option><option value={2}>February</option><option value={3}>March</option>
                   <option value={4}>April</option><option value={5}>May</option><option value={6}>June</option>
                   <option value={7}>July</option><option value={8}>August</option><option value={9}>September</option>
@@ -1121,7 +1161,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
             ) : (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Quarter</label>
-                <select className="form-control" value={quarter} onChange={e => setQuarter(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+                <select className="form-control" value={quarter} onChange={e => setQuarter(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                   <option value={1}>Q1 (Jan - Mar)</option>
                   <option value={2}>Q2 (Apr - Jun)</option>
                   <option value={3}>Q3 (Jul - Sep)</option>
@@ -1131,7 +1171,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
             )}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Year</label>
-              <select className="form-control" value={year} onChange={e => setYear(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', background: '#fff', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <select className="form-control" value={year} onChange={e => setYear(Number(e.target.value))} style={{ height: '42px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '8px 12px', fontWeight: 500, fontSize: '14px', width: '100%', cursor: 'pointer', transition: 'var(--transition)' }}>
                 {[...Array(10)].map((_, i) => {
                   const y = new Date().getFullYear() - 5 + i;
                   return <option key={y} value={y}>{y}</option>;
@@ -1181,11 +1221,11 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
             }}>
               {/* Left Side Actions */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <button className="btn btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                   Print
                 </button>
-                <button className="btn btn-secondary" onClick={() => setShowCharts(!showCharts)} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={() => setShowCharts(!showCharts)} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   {showCharts ? (
                     <>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -1199,11 +1239,11 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
                   )}
                 </button>
                 <span style={{ width: '1px', height: '24px', background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }} />
-                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={handleExportCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                   CSV
                 </button>
-                <button className="btn btn-secondary" onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 500, transition: 'var(--transition)' }}>
+                <button className="btn btn-secondary" onClick={handleExportExcel} style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 500, transition: 'var(--transition)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                   Excel
                 </button>
@@ -1248,7 +1288,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
               { label: 'Net Tax Payable', value: formatCurrency(data.net.total), sub: 'Tax liability after ITC', color: '#0d9488', bg: 'rgba(13, 148, 136, 0.05)', icon: 'NT' }
             ].map((stat, idx) => (
               <div key={idx} style={{
-                background: '#fff',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)',
                 padding: '20px',
@@ -1308,7 +1348,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
 
           {/* Table 3.1 — Outward Supplies */}
           <div className="card mb-16" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '16px 20px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
               <SectionHeader title="Table 3.1 — Outward Taxable Supplies (Sales)" subtitle="Details of outward supplies made during the period" />
             </div>
             <div className="table-wrapper">
@@ -1332,7 +1372,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
 
           {/* Table 4 — ITC */}
           <div className="card mb-16" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ padding: '16px 20px', background: '#fff', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '16px 20px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderBottom: '1px solid var(--border)' }}>
               <SectionHeader title="Table 4 — Input Tax Credit (ITC) Available — Purchases" subtitle="ITC available from inward supplies (purchases) eligible for credit" />
             </div>
             <div className="table-wrapper">
@@ -1382,7 +1422,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
       )}
 
       {!data && !loading && (
-        <div className="empty-state" style={{ minHeight: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: '#fff', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="empty-state" style={{ minHeight: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(22, 163, 74, 0.08)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, marginBottom: '16px' }}>3B</div>
           <div className="empty-title" style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>Select Period &amp; Generate GSTR-3B</div>
           <div className="empty-subtitle" style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '380px', lineHeight: '1.5' }}>Choose the tax period and click the Generate button to see the consolidated summary return.</div>
@@ -1549,7 +1589,7 @@ function InstructionsModal({ isOpen, onClose, reportType, fileName }) {
           <button 
             className="btn btn-secondary"
             onClick={onClose}
-            style={{ padding: '0 18px', height: '40px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: '#fff', fontWeight: 600, transition: 'var(--transition)' }}
+            style={{ padding: '0 18px', height: '40px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 600, transition: 'var(--transition)' }}
           >
             Close Guide
           </button>
@@ -1601,13 +1641,13 @@ export default function GSTReports() {
     <Layout title="GST Reports">
       {/* Segmented Tab Switcher */}
       <div style={{
-        background: '#f1f5f9',
+        background: 'var(--border-light)',
         padding: '5px',
         borderRadius: '30px',
         display: 'inline-flex',
         gap: '4px',
         marginBottom: '28px',
-        border: '1px solid rgba(0, 0, 0, 0.03)',
+        border: '1px solid var(--border)',
         boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)'
       }}>
         {[
@@ -1623,13 +1663,13 @@ export default function GSTReports() {
                 padding: '8px 24px',
                 borderRadius: '26px',
                 border: 'none',
-                background: isActive ? '#fff' : 'transparent',
+                background: isActive ? 'var(--bg-secondary)' : 'transparent',
                 color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)',
                 fontWeight: isActive ? 700 : 600,
                 fontSize: '13.5px',
                 cursor: 'pointer',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: isActive ? '0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03)' : 'none',
+                boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'

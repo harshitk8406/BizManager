@@ -25,6 +25,7 @@ app.use('/api/purchases', protect, requireFirm, require('./src/routes/purchases'
 app.use('/api/sales', protect, requireFirm, require('./src/routes/sales'));
 app.use('/api/reports', protect, requireFirm, require('./src/routes/reports'));
 app.use('/api/payments', protect, requireFirm, require('./src/routes/payments'));
+app.use('/api/challans', protect, requireFirm, require('./src/routes/challan'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 

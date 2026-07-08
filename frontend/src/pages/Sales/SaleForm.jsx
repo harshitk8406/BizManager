@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../../components/Layout/Layout';
 import AutocompleteInput from '../../components/UI/AutocompleteInput';
+import Modal from '../../components/UI/Modal';
 import Toast, { useToast } from '../../components/UI/Toast';
-import { getCustomers } from '../../api/customers';
-import { getItems } from '../../api/items';
+import { getCustomers, createCustomer } from '../../api/customers';
+import { getItems, createItem } from '../../api/items';
 import { createSale, getSaleById, updateSale, getNextSaleInvoiceNumber } from '../../api/sales';
 import { calculateLineItem } from '../../utils/gst';
 import { formatCurrency, todayString, toInputDate } from '../../utils/format';
@@ -14,8 +15,19 @@ import { useAuth } from '../../context/AuthContext';
 
 const EMPTY_ITEM = {
   item: '', itemCode: '', itemName: '', hsnCode: '',
-  packingSize: '', quantity: 1, rate: 0, gstPercentage: 18,
+  packingSize: '', quantity: 1, rate: 0, gstPercentage: 5,
 };
+
+const EMPTY_CUSTOMER_FORM = {
+  customerCode: '', gstNumber: '', customerName: '', customerAddress: '', customerPhone: '',
+};
+
+const EMPTY_ITEM_FORM = {
+  itemCode: '', itemName: '', packingSize: '', hsnCode: '',
+  openingQuantity: 0, purchasePrice: 0, salesPrice: 0, gstPercentage: 5,
+};
+
+const GST_SLABS = [0, 5, 12, 18, 28];
 
 /* ─── Tiny "Invoice Ready" confirmation dialog ──────────────── */
 function InvoiceReadyModal({ sale, onClose, activeFirm }) {
@@ -28,7 +40,6 @@ function InvoiceReadyModal({ sale, onClose, activeFirm }) {
         background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420,
         boxShadow: '0 20px 60px rgba(0,0,0,0.25)', overflow: 'hidden',
       }}>
-        {/* Green top bar */}
         <div style={{ background: '#052e16', padding: '22px 28px 18px' }}>
           <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
             <span style={{ color: '#fff', fontSize: 22, fontWeight: 800 }}>✓</span>
@@ -38,8 +49,6 @@ function InvoiceReadyModal({ sale, onClose, activeFirm }) {
             Invoice <strong style={{ color: '#4ade80' }}>{sale.invoiceNumber}</strong> has been recorded.
           </div>
         </div>
-
-        {/* Body */}
         <div style={{ padding: '20px 28px' }}>
           <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -55,31 +64,19 @@ function InvoiceReadyModal({ sale, onClose, activeFirm }) {
               <span style={{ fontSize: 16, fontWeight: 800, color: '#16a34a' }}>{formatCurrency(sale.totalAmount)}</span>
             </div>
           </div>
-
           <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, lineHeight: 1.6 }}>
-            Click <strong>Print GST Invoice</strong> to open the tax invoice in a new window. 
-            It will open in the standard GST format with HSN summary.
+            Click <strong>Print GST Invoice</strong> to open the tax invoice in a new window.
           </p>
-
           <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
             <button
               onClick={() => { printGSTInvoice(sale, activeFirm); }}
-              style={{
-                background: '#16a34a', color: '#fff', border: 'none',
-                borderRadius: 10, padding: '12px 0', fontWeight: 700,
-                fontSize: 15, cursor: 'pointer', width: '100%',
-              }}
+              style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 0', fontWeight: 700, fontSize: 15, cursor: 'pointer', width: '100%' }}
             >
               Print GST Invoice
             </button>
             <button
               onClick={onClose}
-              style={{
-                background: '#f9fafb', color: '#374151',
-                border: '1px solid #e5e7eb', borderRadius: 10,
-                padding: '10px 0', fontWeight: 600, fontSize: 14,
-                cursor: 'pointer', width: '100%',
-              }}
+              style={{ background: '#f9fafb', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 0', fontWeight: 600, fontSize: 14, cursor: 'pointer', width: '100%' }}
             >
               Skip &amp; Go to Sales List
             </button>
@@ -87,6 +84,182 @@ function InvoiceReadyModal({ sale, onClose, activeFirm }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ─── Quick-Add Customer Modal ──────────────────────────────── */
+function QuickAddCustomerModal({ open, onClose, onAdded }) {
+  const [form, setForm] = useState(EMPTY_CUSTOMER_FORM);
+  const [saving, setSaving] = useState(false);
+  const { toast, show, hide } = useToast();
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.gstNumber || !form.customerName) {
+      show('GST Number and Name are required', 'error'); return;
+    }
+    const gstVal = form.gstNumber.trim().toUpperCase();
+    const isCash = gstVal === 'CASH';
+    const gstRegex = /^[A-Z0-9]{15}$/;
+    if (!isCash && !gstRegex.test(gstVal)) {
+      show('GST Number must be 15 alphanumeric characters (or "CASH" for retail)', 'error'); return;
+    }
+    if (form.customerPhone && form.customerPhone.trim()) {
+      if (!/^[0-9]{10}$/.test(form.customerPhone.trim())) {
+        show('Phone must be a 10-digit number', 'error'); return;
+      }
+    }
+    setSaving(true);
+    try {
+      const payload = { ...form, gstNumber: gstVal, customerPhone: form.customerPhone?.trim() || '' };
+      const r = await createCustomer(payload);
+      show('Customer added!');
+      setTimeout(() => {
+        onAdded(r.data);
+        onClose();
+        setForm(EMPTY_CUSTOMER_FORM);
+      }, 600);
+    } catch (e) {
+      show(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={hide} key={toast.id} />}
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Quick Add Customer"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? <><span className="spinner" /> Saving...</> : 'Add Customer'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-grid form-grid-2">
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <label className="form-label">GST Number / Type <span className="required">*</span></label>
+            <input className="form-control" value={form.gstNumber}
+              onChange={e => set('gstNumber', e.target.value.toUpperCase())}
+              placeholder="GST number or CASH for retail"
+              style={{ textTransform: 'uppercase' }} />
+            <span className="form-hint">Enter CASH for retail / unregistered customers</span>
+          </div>
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <label className="form-label">Customer Name <span className="required">*</span></label>
+            <input className="form-control" value={form.customerName}
+              onChange={e => set('customerName', e.target.value)} placeholder="Customer full name" />
+          </div>
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <label className="form-label">Address</label>
+            <textarea className="form-control" rows={2} value={form.customerAddress}
+              onChange={e => set('customerAddress', e.target.value)} placeholder="Full address" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Phone Number</label>
+            <input className="form-control" value={form.customerPhone}
+              onChange={e => set('customerPhone', e.target.value)} placeholder="10-digit number" />
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+/* ─── Quick-Add Item Modal ──────────────────────────────────── */
+function QuickAddItemModal({ open, onClose, onAdded, prefillName }) {
+  const [form, setForm] = useState({ ...EMPTY_ITEM_FORM });
+  const [saving, setSaving] = useState(false);
+  const { toast, show, hide } = useToast();
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    if (open && prefillName) setForm(f => ({ ...f, itemName: prefillName }));
+    if (!open) setForm({ ...EMPTY_ITEM_FORM });
+  }, [open, prefillName]);
+
+  const handleSave = async () => {
+    if (!form.itemName || !form.packingSize || !form.hsnCode) {
+      show('Item Name, Packing Size and HSN Code are required', 'error'); return;
+    }
+    setSaving(true);
+    try {
+      const r = await createItem(form);
+      show('Item added!');
+      setTimeout(() => { onAdded(r.data); onClose(); }, 600);
+    } catch (e) {
+      show(e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={hide} key={toast.id} />}
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Quick Add Item"
+        size="lg"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? <><span className="spinner" /> Saving...</> : 'Add Item'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-grid form-grid-2">
+          <div className="form-group">
+            <label className="form-label">Item Name <span className="required">*</span></label>
+            <input className="form-control" value={form.itemName}
+              onChange={e => set('itemName', e.target.value)} placeholder="e.g. Brake Pad" autoFocus />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Packing Size <span className="required">*</span></label>
+            <input className="form-control" value={form.packingSize}
+              onChange={e => set('packingSize', e.target.value)} placeholder="e.g. 1 Pc, 10ml" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">HSN Code <span className="required">*</span></label>
+            <input className="form-control" value={form.hsnCode}
+              onChange={e => set('hsnCode', e.target.value)} placeholder="e.g. 87089900" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">GST %</label>
+            <select className="form-control" value={form.gstPercentage}
+              onChange={e => set('gstPercentage', Number(e.target.value))}>
+              {GST_SLABS.map(g => <option key={g} value={g}>{g}%</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Purchase Price (Rs.)</label>
+            <input type="number" className="form-control" value={form.purchasePrice}
+              onChange={e => set('purchasePrice', Number(e.target.value))} min={0} step="0.01" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Sales Price (Rs.)</label>
+            <input type="number" className="form-control" value={form.salesPrice}
+              onChange={e => set('salesPrice', Number(e.target.value))} min={0} step="0.01" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Opening Qty</label>
+            <input type="number" className="form-control" value={form.openingQuantity}
+              onChange={e => set('openingQuantity', Number(e.target.value))} min={0} />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -106,7 +279,15 @@ export default function SaleForm() {
   const [lines, setLines] = useState([{ ...EMPTY_ITEM }]);
   const [itemQueries, setItemQueries] = useState(['']);
   const [saving, setSaving] = useState(false);
-  const [savedSale, setSavedSale] = useState(null);   // triggers the "Invoice Ready" dialog
+  const [savedSale, setSavedSale] = useState(null);
+  const [roundOff, setRoundOff] = useState(true);
+
+  // Quick-add modals
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [itemModalPrefill, setItemModalPrefill] = useState('');
+  const [activeItemIdx, setActiveItemIdx] = useState(null);
+
   const { toast, show, hide } = useToast();
 
   useEffect(() => {
@@ -131,6 +312,7 @@ export default function SaleForm() {
           quantity: i.quantity, rate: i.rate, gstPercentage: i.gstPercentage,
         })));
         setItemQueries(s.items.map(i => i.itemName));
+        setRoundOff(s.roundOff !== undefined ? s.roundOff : true);
       }).catch(e => show(e.message, 'error'));
     }
   }, [id]);
@@ -138,13 +320,12 @@ export default function SaleForm() {
   useEffect(() => {
     if (!isEdit && date) {
       getNextSaleInvoiceNumber(date)
-        .then(res => {
-          setInvoiceNumber(res.data);
-        })
+        .then(res => setInvoiceNumber(res.data))
         .catch(e => show(e.message, 'error'));
     }
   }, [date, isEdit]);
 
+  /* ── Data fetchers ──────────────────────────────────────────── */
   const fetchCustomers = async (q) => {
     const r = await getCustomers({ search: q });
     return r.data.map(c => ({ ...c, label: c.customerName, sub: c.gstNumber }));
@@ -155,8 +336,15 @@ export default function SaleForm() {
     return r.data.map(i => ({ ...i, label: i.itemName, sub: `${i.itemCode} · ${i.packingSize}` }));
   };
 
+  /* ── Customer selection ─────────────────────────────────────── */
   const handleSelectCustomer = (c) => { setCustomer(c); setCustomerQuery(c.customerName); };
 
+  const handleCustomerAdded = (c) => {
+    const mapped = { ...c, label: c.customerName, sub: c.gstNumber };
+    handleSelectCustomer(mapped);
+  };
+
+  /* ── Item row selection ─────────────────────────────────────── */
   const handleSelectItem = (idx, item) => {
     const newLines = [...lines];
     newLines[idx] = {
@@ -171,6 +359,18 @@ export default function SaleForm() {
     setItemQueries(newQ);
   };
 
+  const handleItemAdded = (item) => {
+    if (activeItemIdx !== null) handleSelectItem(activeItemIdx, item);
+    setActiveItemIdx(null);
+  };
+
+  const openItemModal = (idx) => {
+    setActiveItemIdx(idx);
+    setItemModalPrefill(itemQueries[idx] || '');
+    setItemModalOpen(true);
+  };
+
+  /* ── Line management ────────────────────────────────────────── */
   const updateLine = (idx, key, value) => {
     const n = [...lines]; n[idx] = { ...n[idx], [key]: value }; setLines(n);
   };
@@ -184,19 +384,35 @@ export default function SaleForm() {
     setItemQueries(itemQueries.filter((_, i) => i !== idx));
   };
 
+  /* ── Tab key handler for table rows ────────────────────────── */
+  const handleRowTab = useCallback((e, idx, isLastField) => {
+    if (e.key === 'Tab' && !e.shiftKey && isLastField && idx === lines.length - 1) {
+      e.preventDefault();
+      addLine();
+      setTimeout(() => document.getElementById(`sitem-${idx + 1}`)?.focus(), 50);
+    }
+  }, [lines.length]);
+
+  /* ── Totals ─────────────────────────────────────────────────── */
   const getTotals = () => {
     let subtotal = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0;
     lines.forEach(l => {
       if (!l.item) return;
       const g = calculateLineItem(l.quantity, l.rate, l.gstPercentage, isInterState);
-      subtotal += g.taxableAmount; totalCgst += g.cgst; totalSgst += g.sgst; totalIgst += g.igst;
+      subtotal += g.taxableAmount;
+      totalCgst += g.cgst;
+      totalSgst += g.sgst;
+      totalIgst += g.igst;
     });
     const totalTax = totalCgst + totalSgst + totalIgst;
-    return { subtotal, totalCgst, totalSgst, totalIgst, totalTax, grandTotal: subtotal + totalTax };
+    const grandTotal = subtotal + totalTax;
+    const roundOffAmt = roundOff ? Math.round(grandTotal) - grandTotal : 0;
+    return { subtotal, totalCgst, totalSgst, totalIgst, totalTax, grandTotal, roundOffAmt };
   };
 
   const totals = getTotals();
 
+  /* ── Save ───────────────────────────────────────────────────── */
   const handleSave = async () => {
     if (!customer)      { show('Please select a customer', 'error'); return; }
     if (!invoiceNumber) { show('Please enter invoice number', 'error'); return; }
@@ -210,6 +426,7 @@ export default function SaleForm() {
       invoiceNumber,
       date,
       isInterState,
+      roundOff,
       items: validLines.map(l => ({
         item: l.item, itemCode: l.itemCode, itemName: l.itemName,
         hsnCode: l.hsnCode, packingSize: l.packingSize,
@@ -226,12 +443,11 @@ export default function SaleForm() {
       } else {
         const r = await createSale(payload);
         const sale = r.data;
-        // Attach customer info (not always populated in create response)
         sale.customerName    = sale.customerName    || customer.customerName;
         sale.customerGST     = sale.customerGST     || customer.gstNumber;
         sale.customerAddress = sale.customerAddress || customer.customerAddress;
         sale.customerPhone   = sale.customerPhone   || customer.customerPhone;
-        setSavedSale(sale);   // show "Invoice Ready" dialog
+        setSavedSale(sale);
       }
     } catch (e) {
       show(e.message, 'error');
@@ -254,6 +470,19 @@ export default function SaleForm() {
           onClose={() => { setSavedSale(null); navigate('/sales'); }}
         />
       )}
+
+      {/* Quick-add modals */}
+      <QuickAddCustomerModal
+        open={customerModalOpen}
+        onClose={() => setCustomerModalOpen(false)}
+        onAdded={handleCustomerAdded}
+      />
+      <QuickAddItemModal
+        open={itemModalOpen}
+        onClose={() => setItemModalOpen(false)}
+        onAdded={handleItemAdded}
+        prefillName={itemModalPrefill}
+      />
 
       {/* ── Page header ─────────────────────────────────────── */}
       <div className="page-header">
@@ -279,17 +508,29 @@ export default function SaleForm() {
         <div className="form-grid form-grid-3">
           <div className="form-group" style={{ gridColumn: '1 / span 2' }}>
             <label className="form-label">Customer <span className="required">*</span></label>
-            <AutocompleteInput
-              id="customer-search"
-              value={customerQuery}
-              onChange={setCustomerQuery}
-              onSelect={handleSelectCustomer}
-              fetchSuggestions={fetchCustomers}
-              placeholder="Search customer by name or GST..."
-              displayKey="label"
-              subKey="sub"
-              autoFocus={!isEdit}
-            />
+            <div className="autocomplete-with-add">
+              <AutocompleteInput
+                id="customer-search"
+                value={customerQuery}
+                onChange={setCustomerQuery}
+                onSelect={handleSelectCustomer}
+                fetchSuggestions={fetchCustomers}
+                placeholder="Search customer by name or GST..."
+                displayKey="label"
+                subKey="sub"
+                autoFocus={!isEdit}
+                onAddNew={() => setCustomerModalOpen(true)}
+                addNewLabel="+ New Customer"
+              />
+              <button
+                type="button"
+                className="quick-add-btn"
+                onClick={() => setCustomerModalOpen(true)}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                + New Customer
+              </button>
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">Invoice Number <span className="required">*</span></label>
@@ -306,11 +547,8 @@ export default function SaleForm() {
           </div>
           <div className="form-group">
             <label className="form-label">Transaction Type</label>
-            <select
-              className="form-control"
-              value={isInterState ? 'inter' : 'intra'}
-              onChange={e => setIsInterState(e.target.value === 'inter')}
-            >
+            <select className="form-control" value={isInterState ? 'inter' : 'intra'}
+              onChange={e => setIsInterState(e.target.value === 'inter')}>
               <option value="intra">Intra-State (CGST + SGST)</option>
               <option value="inter">Inter-State (IGST)</option>
             </select>
@@ -354,19 +592,19 @@ export default function SaleForm() {
           <button className="btn btn-secondary btn-sm" onClick={addLine}>+ Add Row</button>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table className="invoice-table">
+          <table className="invoice-table" style={{ minWidth: 900 }}>
             <thead>
               <tr>
                 <th style={{ width: 220 }}>Item Name</th>
-                <th style={{ width: 100 }}>HSN Code</th>
+                <th style={{ width: 90 }}>HSN Code</th>
                 <th style={{ width: 110 }}>Packing Size</th>
-                <th style={{ width: 80 }}>Qty</th>
+                <th style={{ width: 100, minWidth: 100 }}>Qty</th>
                 <th style={{ width: 110 }}>Rate (Rs.)</th>
                 <th style={{ width: 80 }}>GST %</th>
                 <th style={{ width: 110 }}>Taxable</th>
                 <th style={{ width: 90 }}>Tax</th>
                 <th style={{ width: 120 }}>Total (Rs.)</th>
-                <th style={{ width: 50 }}></th>
+                <th style={{ width: 44 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -377,37 +615,76 @@ export default function SaleForm() {
                 return (
                   <tr key={idx}>
                     <td>
-                      <AutocompleteInput
-                        id={`sitem-${idx}`}
-                        value={itemQueries[idx]}
-                        onChange={v => { const q = [...itemQueries]; q[idx] = v; setItemQueries(q); }}
-                        onSelect={(item) => handleSelectItem(idx, item)}
-                        fetchSuggestions={fetchItems}
-                        placeholder="Search item..."
-                        displayKey="label"
-                        subKey="sub"
+                      <div className="autocomplete-with-add">
+                        <AutocompleteInput
+                          id={`sitem-${idx}`}
+                          value={itemQueries[idx]}
+                          onChange={v => { const q = [...itemQueries]; q[idx] = v; setItemQueries(q); }}
+                          onSelect={(item) => handleSelectItem(idx, item)}
+                          fetchSuggestions={fetchItems}
+                          placeholder="Search item..."
+                          displayKey="label"
+                          subKey="sub"
+                          onAddNew={() => openItemModal(idx)}
+                          addNewLabel="+ New Item"
+                        />
+                        <button
+                          type="button"
+                          className="quick-add-btn"
+                          onClick={() => openItemModal(idx)}
+                        >
+                          + New Item
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <input
+                        className="form-control hsn-readonly"
+                        value={line.hsnCode}
+                        readOnly
+                        tabIndex={-1}
+                        placeholder="From item"
+                        title="HSN Code is set from Item Master"
                       />
                     </td>
                     <td>
-                      <input className="form-control" value={line.hsnCode}
-                        onChange={e => updateLine(idx, 'hsnCode', e.target.value)} placeholder="HSN" />
+                      <input
+                        className="form-control"
+                        value={line.packingSize}
+                        onChange={e => updateLine(idx, 'packingSize', e.target.value)}
+                        placeholder="e.g. 1 Pc"
+                        title="Packing size (editable)"
+                      />
                     </td>
                     <td>
-                      <input className="form-control" value={line.packingSize}
-                        onChange={e => updateLine(idx, 'packingSize', e.target.value)} placeholder="Size" />
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={line.quantity}
+                        onChange={e => updateLine(idx, 'quantity', e.target.value)}
+                        min={0.001}
+                        step="0.001"
+                        style={{ minWidth: 72 }}
+                      />
                     </td>
                     <td>
-                      <input type="number" className="form-control" value={line.quantity}
-                        onChange={e => updateLine(idx, 'quantity', e.target.value)} min={0.001} step="0.001" />
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={line.rate}
+                        onChange={e => updateLine(idx, 'rate', e.target.value)}
+                        min={0}
+                        step="0.01"
+                      />
                     </td>
                     <td>
-                      <input type="number" className="form-control" value={line.rate}
-                        onChange={e => updateLine(idx, 'rate', e.target.value)} min={0} step="0.01" />
-                    </td>
-                    <td>
-                      <select className="form-control" value={line.gstPercentage}
-                        onChange={e => updateLine(idx, 'gstPercentage', Number(e.target.value))}>
-                        {[0, 5, 12, 18, 28].map(g => <option key={g} value={g}>{g}%</option>)}
+                      <select
+                        className="form-control"
+                        value={line.gstPercentage}
+                        onChange={e => updateLine(idx, 'gstPercentage', Number(e.target.value))}
+                        onKeyDown={e => handleRowTab(e, idx, true)}
+                      >
+                        {GST_SLABS.map(g => <option key={g} value={g}>{g}%</option>)}
                       </select>
                     </td>
                     <td className="text-right fw-600">{g ? formatCurrency(g.taxableAmount) : '—'}</td>
@@ -418,6 +695,7 @@ export default function SaleForm() {
                         className="btn btn-danger btn-sm btn-icon"
                         onClick={() => removeLine(idx)}
                         disabled={lines.length === 1}
+                        tabIndex={-1}
                       >×</button>
                     </td>
                   </tr>
@@ -428,19 +706,39 @@ export default function SaleForm() {
         </div>
       </div>
 
-      {/* ── Running Totals ───────────────────────────────────── */}
+      {/* ── Totals ───────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div className="totals-section" style={{ minWidth: 320 }}>
+        <div className="totals-section" style={{ minWidth: 320, width: '100%', maxWidth: 380 }}>
+          <label className="roundoff-toggle">
+            <input
+              type="checkbox"
+              checked={roundOff}
+              onChange={e => setRoundOff(e.target.checked)}
+            />
+            Auto Round-off Grand Total
+          </label>
           <div className="totals-row"><span>Taxable Amount</span><span className="value">{formatCurrency(totals.subtotal)}</span></div>
           {isInterState
             ? <div className="totals-row"><span>IGST</span><span className="value">{formatCurrency(totals.totalIgst)}</span></div>
             : <>
                 <div className="totals-row"><span>CGST</span><span className="value">{formatCurrency(totals.totalCgst)}</span></div>
                 <div className="totals-row"><span>SGST</span><span className="value">{formatCurrency(totals.totalSgst)}</span></div>
-              </>
-          }
+              </>}
           <div className="totals-row"><span>Total Tax</span><span className="value">{formatCurrency(totals.totalTax)}</span></div>
-          <div className="totals-row total"><span>Grand Total</span><span className="value">{formatCurrency(totals.grandTotal)}</span></div>
+          {roundOff && totals.roundOffAmt !== 0 && (
+            <div className="totals-row roundoff">
+              <span>Round Off</span>
+              <span className="value">
+                {totals.roundOffAmt > 0 ? '+' : ''}{formatCurrency(totals.roundOffAmt)}
+              </span>
+            </div>
+          )}
+          <div className="totals-row total">
+            <span>Grand Total</span>
+            <span className="value">
+              {formatCurrency(roundOff ? Math.round(totals.grandTotal) : totals.grandTotal)}
+            </span>
+          </div>
         </div>
       </div>
     </Layout>

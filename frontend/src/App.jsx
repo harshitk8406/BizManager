@@ -8,6 +8,8 @@ import PurchaseList from './pages/Purchases/PurchaseList';
 import PurchaseForm from './pages/Purchases/PurchaseForm';
 import SaleList from './pages/Sales/SaleList';
 import SaleForm from './pages/Sales/SaleForm';
+import ChallanList from './pages/Challans/ChallanList';
+import ChallanForm from './pages/Challans/ChallanForm';
 import StockReport from './pages/Reports/StockReport';
 import StockDetailReport from './pages/Reports/StockDetailReport';
 import GSTReports from './pages/Reports/GSTReports';
@@ -53,6 +55,9 @@ export default function App() {
         <Route path="/sales"                   element={<ProtectedRoute><SaleList /></ProtectedRoute>} />
         <Route path="/sales/new"               element={<ProtectedRoute><SaleForm /></ProtectedRoute>} />
         <Route path="/sales/edit/:id"          element={<ProtectedRoute><SaleForm /></ProtectedRoute>} />
+        <Route path="/challans"                element={<ProtectedRoute><ChallanList /></ProtectedRoute>} />
+        <Route path="/challans/new"            element={<ProtectedRoute><ChallanForm /></ProtectedRoute>} />
+        <Route path="/challans/edit/:id"       element={<ProtectedRoute><ChallanForm /></ProtectedRoute>} />
         <Route path="/reports/stock"           element={<ProtectedRoute><StockReport /></ProtectedRoute>} />
         <Route path="/reports/stock-detail"    element={<ProtectedRoute><StockDetailReport /></ProtectedRoute>} />
         <Route path="/reports/gst"             element={<ProtectedRoute><GSTReports /></ProtectedRoute>} />

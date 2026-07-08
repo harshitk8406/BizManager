@@ -13,6 +13,7 @@ const navItems = [
   { group: 'Transactions', items: [
     { path: '/purchases', label: 'Purchases' },
     { path: '/sales',     label: 'Sales' },
+    { path: '/challans',  label: 'Challans' },
     { path: '/payments',  label: 'Payments' },
   ]},
   { group: 'Reports', items: [
@@ -22,13 +23,13 @@ const navItems = [
   ]},
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeFirm } = useAuth();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${open ? ' sidebar-mobile-open' : ''}`}>
       <div className="sidebar-logo">
         <div className="logo-mark">
           <div className="logo-icon">B</div>
@@ -39,6 +40,14 @@ export default function Sidebar() {
             </span>
           </div>
         </div>
+        {/* Mobile close button inside sidebar */}
+        <button
+          className="sidebar-close-btn"
+          onClick={onClose}
+          aria-label="Close navigation"
+        >
+          ✕
+        </button>
       </div>
 
       <nav className="sidebar-nav">
@@ -54,6 +63,7 @@ export default function Sidebar() {
                   key={item.path}
                   to={item.path}
                   className={`nav-item${isActive ? ' active' : ''}`}
+                  onClick={onClose}
                 >
                   <span className="nav-dot"></span>
                   {item.label}
@@ -64,10 +74,9 @@ export default function Sidebar() {
         ))}
       </nav>
 
-
       <div className="sidebar-footer">
         <button 
-          onClick={() => navigate('/select-firm')}
+          onClick={() => { navigate('/select-firm'); onClose(); }}
           style={{
             width: '100%',
             background: 'rgba(37, 99, 235, 0.08)',
@@ -91,7 +100,7 @@ export default function Sidebar() {
           Select Firm
         </button>
         <button 
-          onClick={() => navigate('/profile')}
+          onClick={() => { navigate('/profile'); onClose(); }}
           style={{
             width: '100%',
             background: 'rgba(22, 163, 74, 0.08)',

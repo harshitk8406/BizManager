@@ -1,0 +1,30 @@
+BizManager - Business Management Software
+End User License Agreement (EULA)
+
+Copyright (c) 2026 Harshit Business. All rights reserved.
+
+PLEASE READ THIS LICENSE AGREEMENT CAREFULLY BEFORE USING THIS SOFTWARE.
+
+By installing, copying, or otherwise using BizManager, you agree to the terms of this agreement.
+
+1. GRANT OF LICENSE
+   This software is provided for use by authorized users only. You may install and use 
+   one copy of BizManager on a single computer.
+
+2. RESTRICTIONS
+   You may not:
+   - Reverse engineer or decompile the software
+   - Redistribute or resell the software
+   - Use the software for unlawful purposes
+
+3. DATA & PRIVACY
+   BizManager stores all data locally on your computer. No data is transmitted to external servers.
+   You are solely responsible for backing up your business data.
+
+4. DISCLAIMER OF WARRANTIES
+   This software is provided "AS IS" without warranty of any kind, express or implied.
+
+5. LIMITATION OF LIABILITY
+   In no event shall the authors be liable for any damages arising from the use of this software.
+
+By clicking "I Agree" during installation, you accept these terms.

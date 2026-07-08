@@ -269,7 +269,7 @@ export default function PaymentList() {
           }
         ].map((stat, idx) => (
           <div key={idx} style={{
-            background: '#fff',
+            background: 'var(--bg-secondary)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-lg)',
             padding: '20px',
@@ -311,7 +311,7 @@ export default function PaymentList() {
 
       {/* Segmented Controller Tab Selector */}
       <div style={{
-        background: '#f1f5f9',
+        background: 'var(--border-light)',
         padding: '5px',
         borderRadius: '30px',
         display: 'inline-flex',
@@ -334,13 +334,13 @@ export default function PaymentList() {
                 padding: '8px 24px',
                 borderRadius: '26px',
                 border: 'none',
-                background: isActive ? '#fff' : 'transparent',
+                background: isActive ? 'var(--bg-secondary)' : 'transparent',
                 color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)',
                 fontWeight: isActive ? 700 : 600,
                 fontSize: '13px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: isActive ? '0 4px 12px rgba(0, 0, 0, 0.05)' : 'none',
+                boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
               }}
             >
               {tab.label}

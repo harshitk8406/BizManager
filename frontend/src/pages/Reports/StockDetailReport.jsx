@@ -9,11 +9,18 @@ import { exportToCSV, exportToXLSX } from '../../utils/export';
 Chart.register(...registerables);
 
 export default function StockDetailReport() {
+  // Compute current month date range in LOCAL timezone (not UTC via toISOString)
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const firstOfMonth = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const lastOfMonth = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(lastDay)}`;
+
   const [reportType, setReportType] = useState('purchase'); // 'purchase' | 'sales'
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(firstOfMonth);
+  const [to, setTo] = useState(lastOfMonth);
   const [itemCode, setItemCode] = useState('');
   const [searched, setSearched] = useState(false);
   const [showCharts, setShowCharts] = useState(true);
@@ -24,20 +31,28 @@ export default function StockDetailReport() {
   const pieChartInstance = useRef(null);
   const barChartInstance = useRef(null);
 
-  const handleSearch = () => {
+  const doFetch = (type, overrideFrom, overrideTo) => {
     setLoading(true);
     setSearched(true);
     const params = {};
-    if (from)     params.from     = from;
-    if (to)       params.to       = to;
+    const f = overrideFrom !== undefined ? overrideFrom : from;
+    const t = overrideTo   !== undefined ? overrideTo   : to;
+    if (f)        params.from     = f;
+    if (t)        params.to       = t;
     if (itemCode) params.itemCode = itemCode;
-
-    const fetcher = reportType === 'purchase' ? getStockDetail : getSalesDetail;
+    const fetcher = type === 'purchase' ? getStockDetail : getSalesDetail;
     fetcher(params)
-      .then(r => setData(r.data))
+      .then(r  => setData(r.data))
       .catch(e => show(e.message, 'error'))
       .finally(() => setLoading(false));
   };
+
+  const handleSearch = () => doFetch(reportType);
+
+  // Auto-load on mount with current month range
+  useEffect(() => {
+    doFetch('purchase', firstOfMonth, lastOfMonth);
+  }, []);
 
   useEffect(() => {
     if (loading || data.length === 0 || !showCharts || !searched) return;
@@ -188,16 +203,18 @@ export default function StockDetailReport() {
     });
 
     return () => {
-      if (pieChartInstance.current) pieChartInstance.current.destroy();
-      if (barChartInstance.current) barChartInstance.current.destroy();
+      if (pieChartInstance.current) { pieChartInstance.current.destroy(); pieChartInstance.current = null; }
+      if (barChartInstance.current) { barChartInstance.current.destroy(); barChartInstance.current = null; }
     };
   }, [data, loading, showCharts, reportType, searched]);
 
-  // Reset on type change
+  // Reset data and re-fetch when report type changes
   const handleTypeChange = (type) => {
+    if (type === reportType) return;
     setReportType(type);
     setData([]);
     setSearched(false);
+    doFetch(type);
   };
 
   const totalAmount = data.reduce((s, r) => s + (r.amount    || 0), 0);

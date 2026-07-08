@@ -53,25 +53,224 @@ export function buildHsnSummary(items) {
 
 /* ─── formatCurrency helper (no React dependency) ───────────── */
 function fc(v) {
-  return 'Rs. ' + (v || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return 'Rs. ' + Number(v || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/* ─── Shared CSS for both invoice and receipt ───────────────── */
+function sharedCSS() {
+  return `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Page size selector (screen only) ── */
+    .no-print { }
+    .print-controls {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; padding: 14px 20px;
+      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      font-family: Arial, sans-serif; font-size: 13px;
+    }
+    .print-controls label { font-weight: 600; color: #374151; }
+    .print-controls select {
+      padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db;
+      font-size: 13px; background: #fff; cursor: pointer;
+    }
+    .btn-print {
+      background: #16a34a; color: #fff; border: none;
+      padding: 9px 26px; border-radius: 8px;
+      font-weight: 700; font-size: 14px; cursor: pointer;
+    }
+    .btn-close {
+      background: #f3f4f6; color: #374151;
+      border: 1px solid #d1d5db; padding: 9px 20px;
+      border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;
+    }
+
+    /* ── Body & page ── */
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      color: #111;
+      background: #fff;
+    }
+
+    /* ── Invoice wrapper: fluid width, respects paper ── */
+    .invoice {
+      width: 100%;
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 10mm 12mm;
+    }
+
+    /* ── Outer border ── */
+    .outer-box { border: 1.5px solid #111; width: 100%; }
+
+    /* ── Title bar ── */
+    .title-bar {
+      text-align: center;
+      font-size: 13px; font-weight: 800;
+      letter-spacing: 4px; text-transform: uppercase;
+      padding: 6px 0;
+      border-bottom: 1.5px solid #111;
+      background: #052e16; color: #fff;
+    }
+
+    /* ── Two-column layout using table for print compatibility ── */
+    .two-col { display: table; width: 100%; border-collapse: collapse; border-bottom: 1px solid #111; }
+    .two-col .left  { display: table-cell; width: 55%; padding: 9px 11px; border-right: 1px solid #111; vertical-align: top; }
+    .two-col .right { display: table-cell; width: 45%; padding: 9px 11px; vertical-align: top; }
+    .two-col.right-align .right { vertical-align: bottom; text-align: right; }
+
+    /* ── Party block ── */
+    .biz-name   { font-size: 13px; font-weight: 800; color: #052e16; word-break: break-word; }
+    .biz-detail { font-size: 10px; color: #374151; margin-top: 2px; line-height: 1.6; word-break: break-word; }
+    .gstin-tag  { font-weight: 700; color: #111; }
+    .sec-label  { font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 4px; }
+
+    /* ── Invoice meta table ── */
+    .meta-table { width: 100%; border-collapse: collapse; }
+    .meta-table td { padding: 3px 0; font-size: 10.5px; }
+    .meta-table td:first-child { width: 100px; color: #6b7280; white-space: nowrap; }
+    .meta-table td:last-child  { font-weight: 600; word-break: break-word; }
+
+    /* ── Items table ── */
+    .tbl { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+    .tbl th {
+      background: #052e16; color: #fff;
+      padding: 5px 6px; font-size: 9.5px; font-weight: 700;
+      border: 1px solid #111; text-align: left;
+      word-wrap: break-word; overflow-wrap: break-word;
+    }
+    .tbl td {
+      padding: 4px 6px; border: 1px solid #ddd;
+      vertical-align: top; word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    .tbl tbody tr:last-child td { border-bottom: 1px solid #111; }
+    .tbl tfoot td { border: 1px solid #111; }
+    .tc { text-align: center; }
+    .tr { text-align: right; }
+    .b  { font-weight: 700; }
+    .sm { font-size: 9px; color: #6b7280; }
+    .totrow { background: #f0fdf4; font-weight: 700; }
+
+    /* ── Totals section (table-based for print) ── */
+    .totals-outer { display: table; width: 100%; border-collapse: collapse; border-top: 1px solid #111; }
+    .words-box {
+      display: table-cell; width: 58%;
+      padding: 9px 11px; border-right: 1px solid #111;
+      vertical-align: top;
+    }
+    .words-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 3px; }
+    .words-text  { font-size: 10.5px; font-weight: 600; font-style: italic; line-height: 1.5; word-break: break-word; }
+    .totals-box  { display: table-cell; width: 42%; padding: 9px 11px; vertical-align: top; }
+    .tot-row {
+      display: table; width: 100%;
+      border-collapse: collapse;
+      padding: 2px 0; font-size: 10.5px;
+    }
+    .tot-row span:first-child { display: table-cell; text-align: left; }
+    .tot-row span:last-child  { display: table-cell; text-align: right; font-weight: 600; white-space: nowrap; }
+    .tot-row.grand {
+      font-size: 12px; font-weight: 800; color: #052e16;
+      border-top: 1.5px solid #052e16; margin-top: 5px; padding-top: 5px;
+    }
+    .tot-row.roundoff { color: #d97706; }
+
+    /* ── HSN Summary ── */
+    .hsn-title {
+      background: #f0fdf4; border-top: 1.5px solid #111; border-bottom: 1px solid #111;
+      font-size: 9.5px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 1.5px; padding: 4px 11px; color: #052e16;
+    }
+
+    /* ── Footer ── */
+    .footer-outer { display: table; width: 100%; border-collapse: collapse; border-top: 1px solid #111; }
+    .declaration  { display: table-cell; width: 65%; padding: 9px 11px; border-right: 1px solid #111; font-size: 9.5px; color: #374151; line-height: 1.7; vertical-align: top; word-break: break-word; }
+    .sig-box      { display: table-cell; width: 35%; padding: 9px 11px; text-align: center; vertical-align: top; }
+    .sig-line     { border-top: 1px solid #111; margin-top: 36px; font-size: 9.5px; color: #374151; padding-top: 4px; }
+    .sig-biz      { font-weight: 700; font-size: 10.5px; word-break: break-word; }
+
+    /* ── Print media ── */
+    @media print {
+      @page {
+        margin: 8mm 10mm;
+      }
+      body { background: #fff !important; color: #111 !important; font-size: 10px; }
+      .no-print, .print-controls { display: none !important; }
+      .invoice { max-width: 100% !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
+      .outer-box { width: 100% !important; border: 1.5px solid #111 !important; }
+      .tbl { font-size: 9px !important; }
+      .tbl th { font-size: 8.5px !important; padding: 4px 5px !important; }
+      .tbl td { padding: 3px 5px !important; }
+      .biz-name { font-size: 12px !important; }
+      .title-bar { font-size: 12px !important; letter-spacing: 2px !important; }
+      .two-col .left, .two-col .right { padding: 7px 9px !important; }
+      .words-box, .totals-box { padding: 7px 9px !important; }
+      .declaration, .sig-box { padding: 7px 9px !important; }
+      /* keep table rows together where possible */
+      tr { page-break-inside: avoid; }
+      .outer-box { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
+    }
+  `;
+}
+
+/* ─── Paper size script injected into print window ─────────── */
+function paperScript() {
+  return `
+    <script>
+      function setPaper(size) {
+        var style = document.getElementById('page-size-style');
+        var rules = {
+          'a4':     '@page { size: A4 portrait; margin: 8mm 10mm; }',
+          'a4-l':   '@page { size: A4 landscape; margin: 8mm 10mm; }',
+          'a5':     '@page { size: A5 portrait; margin: 6mm 8mm; }',
+          'letter': '@page { size: letter portrait; margin: 10mm 12mm; }',
+          'legal':  '@page { size: legal portrait; margin: 10mm 12mm; }',
+        };
+        style.textContent = rules[size] || rules['a4'];
+      }
+      // Set default on load
+      document.addEventListener('DOMContentLoaded', function() { setPaper('a4'); });
+    <\/script>
+  `;
+}
+
+/* ─── Print controls bar HTML ───────────────────────────────── */
+function printControlsBar(btnLabel) {
+  return `
+    <div class="no-print print-controls">
+      <label for="paper-size">Paper Size:</label>
+      <select id="paper-size" onchange="setPaper(this.value)">
+        <option value="a4">A4 (Portrait)</option>
+        <option value="a4-l">A4 (Landscape)</option>
+        <option value="a5">A5</option>
+        <option value="letter">Letter</option>
+        <option value="legal">Legal</option>
+      </select>
+      <button class="btn-print" onclick="window.print()">${btnLabel}</button>
+      <button class="btn-close" onclick="window.close()">Close</button>
+    </div>
+    <style id="page-size-style">@page { size: A4 portrait; margin: 8mm 10mm; }</style>
+  `;
 }
 
 /* ─── Main print function ───────────────────────────────────── */
 export function printGSTInvoice(sale, firm) {
   const BUSINESS = {
-    name: firm?.name ?? '',
-    address: firm?.address ?? '',
-    pincode: firm?.pincode ?? '',
-    gstin: firm?.gstin ?? '',
-    phone: firm?.phone ?? '',
-    email: firm?.email ?? '',
-    state: firm?.state ?? '',
+    name:      firm?.name      ?? '',
+    address:   firm?.address   ?? '',
+    pincode:   firm?.pincode   ?? '',
+    gstin:     firm?.gstin     ?? '',
+    phone:     firm?.phone     ?? '',
+    email:     firm?.email     ?? '',
+    state:     firm?.state     ?? '',
     stateCode: firm?.stateCode ?? '',
   };
   const isInterState = sale.isInterState;
   const hsnList      = buildHsnSummary(sale.items);
 
-  // Helper: get date string
   const dateStr = sale.date
     ? new Date(sale.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '';
@@ -108,36 +307,34 @@ export function printGSTInvoice(sale, firm) {
       </tr>`;
   }).join('');
 
-  /* ── items table header ────────────────────────────────── */
+  /* ── items table header ── */
   const itemHeader = isInterState ? `
     <tr>
-      <th class="tc">Sr.</th>
-      <th>Description of Goods</th>
-      <th class="tc">HSN / SAC</th>
-      <th class="tr">Qty</th>
-      <th class="tr">Rate (Rs.)</th>
-      <th class="tr">Taxable Value</th>
-      <th class="tc">IGST %</th>
-      <th class="tr">IGST Amt</th>
-      <th class="tr">Total</th>
+      <th class="tc" style="width:4%">Sr.</th>
+      <th style="width:28%">Description of Goods</th>
+      <th class="tc" style="width:10%">HSN/SAC</th>
+      <th class="tr" style="width:7%">Qty</th>
+      <th class="tr" style="width:12%">Rate</th>
+      <th class="tr" style="width:13%">Taxable</th>
+      <th class="tc" style="width:7%">IGST%</th>
+      <th class="tr" style="width:10%">IGST Amt</th>
+      <th class="tr" style="width:9%">Total</th>
     </tr>` : `
     <tr>
-      <th class="tc">Sr.</th>
-      <th>Description of Goods</th>
-      <th class="tc">HSN / SAC</th>
-      <th class="tr">Qty</th>
-      <th class="tr">Rate (Rs.)</th>
-      <th class="tr">Taxable Value</th>
-      <th class="tc">CGST %</th>
-      <th class="tr">CGST Amt</th>
-      <th class="tc">SGST %</th>
-      <th class="tr">SGST Amt</th>
-      <th class="tr">Total</th>
+      <th class="tc" style="width:4%">Sr.</th>
+      <th style="width:24%">Description of Goods</th>
+      <th class="tc" style="width:9%">HSN/SAC</th>
+      <th class="tr" style="width:6%">Qty</th>
+      <th class="tr" style="width:10%">Rate</th>
+      <th class="tr" style="width:11%">Taxable</th>
+      <th class="tc" style="width:6%">CGST%</th>
+      <th class="tr" style="width:9%">CGST</th>
+      <th class="tc" style="width:6%">SGST%</th>
+      <th class="tr" style="width:9%">SGST</th>
+      <th class="tr" style="width:6%">Total</th>
     </tr>`;
 
-  const colSpan = isInterState ? 9 : 11;
-
-  /* ── HSN summary rows ──────────────────────────────────── */
+  /* ── HSN summary rows ── */
   const hsnRows = hsnList.map(h => {
     if (isInterState) {
       return `
@@ -192,138 +389,46 @@ export function printGSTInvoice(sale, firm) {
     <tr>
       <th class="tc">HSN / SAC</th>
       <th class="tr">Taxable Value</th>
-      <th class="tc">Integrated Tax Rate</th>
-      <th class="tr">Integrated Tax Amount</th>
+      <th class="tc">IGST Rate</th>
+      <th class="tr">IGST Amount</th>
       <th class="tr">Total Tax</th>
     </tr>` : `
     <tr>
       <th class="tc">HSN / SAC</th>
       <th class="tr">Taxable Value</th>
-      <th class="tc">Central Tax Rate</th>
-      <th class="tr">Central Tax Amount</th>
-      <th class="tc">State Tax Rate</th>
-      <th class="tr">State Tax Amount</th>
+      <th class="tc">CGST Rate</th>
+      <th class="tr">CGST Amt</th>
+      <th class="tc">SGST Rate</th>
+      <th class="tr">SGST Amt</th>
       <th class="tr">Total Tax</th>
     </tr>`;
 
-  /* ── Tax summary in totals block ───────────────────────── */
+  /* ── Tax summary in totals block ── */
   const taxLines = isInterState
     ? `<div class="tot-row"><span>IGST</span><span>${fc(sale.totalIgst)}</span></div>`
     : `<div class="tot-row"><span>CGST</span><span>${fc(sale.totalCgst)}</span></div>
        <div class="tot-row"><span>SGST / UTGST</span><span>${fc(sale.totalSgst)}</span></div>`;
 
-  /* ── Full HTML ─────────────────────────────────────────── */
+  // Round-off row
+  const rawTotal = (sale.subtotal || 0) + (sale.totalTax || 0);
+  const roundOffAmt = (sale.totalAmount || 0) - rawTotal;
+  const roundOffRow = Math.abs(roundOffAmt) >= 0.01
+    ? `<div class="tot-row roundoff"><span>Round Off</span><span>${roundOffAmt > 0 ? '+' : ''}${fc(roundOffAmt)}</span></div>`
+    : '';
+
+  /* ── Full HTML ── */
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tax Invoice — ${sale.invoiceNumber}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; background: #fff; }
-
-    /* ── Page ─────────────────────────────────── */
-    .invoice { max-width: 210mm; margin: 0 auto; padding: 12mm 14mm; }
-    @media print {
-      body { margin: 0; }
-      .invoice { padding: 8mm 10mm; max-width: 100%; }
-      .no-print { display: none !important; }
-    }
-
-    /* ── Outer border ─────────────────────────── */
-    .outer-box { border: 1.5px solid #111; }
-
-    /* ── Title bar ────────────────────────────── */
-    .title-bar {
-      text-align: center;
-      font-size: 14px;
-      font-weight: 800;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      padding: 6px 0;
-      border-bottom: 1.5px solid #111;
-      background: #052e16;
-      color: #fff;
-    }
-
-    /* ── Two column row ───────────────────────── */
-    .two-col { display: flex; border-bottom: 1px solid #111; }
-    .two-col .left  { flex: 1; padding: 10px 12px; border-right: 1px solid #111; }
-    .two-col .right { flex: 1; padding: 10px 12px; }
-    .two-col.border-top { border-top: 1px solid #111; }
-
-    /* ── Party block ──────────────────────────── */
-    .biz-name { font-size: 14px; font-weight: 800; color: #052e16; }
-    .biz-detail { font-size: 10.5px; color: #374151; margin-top: 2px; line-height: 1.6; }
-    .gstin-tag { font-weight: 700; color: #111; }
-    .sec-label {
-      font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
-      color: #6b7280; font-weight: 700; margin-bottom: 5px;
-    }
-
-    /* ── Invoice meta ─────────────────────────── */
-    .meta-table { width: 100%; border-collapse: collapse; }
-    .meta-table td { padding: 3px 0; font-size: 11px; }
-    .meta-table td:first-child { width: 110px; color: #6b7280; }
-    .meta-table td:last-child  { font-weight: 600; }
-
-    /* ── Items table ──────────────────────────── */
-    .tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .tbl th {
-      background: #052e16; color: #fff;
-      padding: 6px 8px; font-size: 10px; font-weight: 700;
-      border: 1px solid #111; text-align: left;
-    }
-    .tbl td { padding: 5px 8px; border: 1px solid #ddd; vertical-align: top; }
-    .tbl tbody tr:last-child td { border-bottom: 1px solid #111; }
-    .tbl tfoot td { border: 1px solid #111; }
-    .tc { text-align: center; }
-    .tr { text-align: right; }
-    .b  { font-weight: 700; }
-    .sm { font-size: 9.5px; color: #6b7280; }
-    .totrow { background: #f0fdf4; font-weight: 700; }
-
-    /* ── Totals section ───────────────────────── */
-    .totals-outer { display: flex; border-top: 1px solid #111; }
-    .words-box { flex: 1; padding: 10px 12px; border-right: 1px solid #111; }
-    .words-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 4px; }
-    .words-text  { font-size: 11px; font-weight: 600; font-style: italic; line-height: 1.5; }
-    .totals-box  { min-width: 220px; padding: 10px 12px; }
-    .tot-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11.5px; }
-    .tot-row.grand {
-      font-size: 13px; font-weight: 800; color: #052e16;
-      border-top: 1.5px solid #052e16; margin-top: 6px; padding-top: 6px;
-    }
-
-    /* ── HSN Summary ──────────────────────────── */
-    .hsn-title {
-      background: #f0fdf4; border-top: 1.5px solid #111; border-bottom: 1px solid #111;
-      font-size: 10px; font-weight: 800; text-transform: uppercase;
-      letter-spacing: 1.5px; padding: 5px 12px; color: #052e16;
-    }
-
-    /* ── Footer ───────────────────────────────── */
-    .footer-outer { display: flex; border-top: 1px solid #111; }
-    .declaration  { flex: 1; padding: 10px 12px; border-right: 1px solid #111; font-size: 10px; color: #374151; line-height: 1.7; }
-    .sig-box      { min-width: 180px; padding: 10px 12px; text-align: center; }
-    .sig-line     { border-top: 1px solid #111; margin-top: 38px; font-size: 10px; color: #374151; padding-top: 4px; }
-    .sig-biz      { font-weight: 700; font-size: 11px; }
-
-    /* ── Print button ─────────────────────────── */
-    .print-btn-bar {
-      display: flex; justify-content: center; gap: 12px;
-      padding: 16px; background: #f9fafb; border-top: 1px solid #e5e7eb;
-    }
-    .btn-print { background: #16a34a; color: #fff; border: none; padding: 10px 28px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
-    .btn-close { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
-  </style>
+  <style>${sharedCSS()}</style>
+  ${paperScript()}
 </head>
 <body>
 
-<div class="no-print print-btn-bar">
-  <button class="btn-print" onclick="window.print()">Print Invoice</button>
-  <button class="btn-close" onclick="window.close()">Close</button>
-</div>
+${printControlsBar('Print Invoice')}
 
 <div class="invoice">
   <div class="outer-box">
@@ -346,7 +451,7 @@ export function printGSTInvoice(sale, firm) {
         <table class="meta-table">
           <tr><td>Invoice No.</td><td>${sale.invoiceNumber}</td></tr>
           <tr><td>Invoice Date</td><td>${dateStr}</td></tr>
-          <tr><td>Place of Supply</td><td>${BUSINESS.state} (${BUSINESS.stateCode})</td></tr>
+          <tr><td>Place of Supply</td><td>${BUSINESS.state}${BUSINESS.stateCode ? ' (' + BUSINESS.stateCode + ')' : ''}</td></tr>
           <tr><td>Reverse Charge</td><td>No</td></tr>
           <tr><td>Supply Type</td><td>${isInterState ? 'Inter-State' : 'Intra-State'}</td></tr>
         </table>
@@ -354,8 +459,8 @@ export function printGSTInvoice(sale, firm) {
     </div>
 
     <!-- ③ Buyer Details -->
-    <div class="two-col">
-      <div class="left" style="flex:1">
+    <div class="two-col right-align">
+      <div class="left">
         <div class="sec-label">Bill To / Buyer</div>
         <div class="biz-name">${sale.customerName}</div>
         <div class="biz-detail">
@@ -364,11 +469,9 @@ export function printGSTInvoice(sale, firm) {
           ${sale.customerPhone ? '<br>Ph: ' + sale.customerPhone : ''}
         </div>
       </div>
-      <div class="right" style="flex:1; display:flex; align-items:flex-end; justify-content:flex-end;">
-        <div style="text-align:right">
-          <div class="sec-label">Total Invoice Value</div>
-          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fc(sale.totalAmount)}</div>
-        </div>
+      <div class="right">
+        <div class="sec-label">Total Invoice Value</div>
+        <div style="font-size:18px;font-weight:800;color:#16a34a;">${fc(sale.totalAmount)}</div>
       </div>
     </div>
 
@@ -388,6 +491,7 @@ export function printGSTInvoice(sale, firm) {
         <div class="tot-row"><span>Taxable Amount</span><span>${fc(sale.subtotal)}</span></div>
         ${taxLines}
         <div class="tot-row"><span>Total Tax</span><span>${fc(sale.totalTax)}</span></div>
+        ${roundOffRow}
         <div class="tot-row grand"><span>Grand Total</span><span>${fc(sale.totalAmount)}</span></div>
       </div>
     </div>
@@ -405,7 +509,7 @@ export function printGSTInvoice(sale, firm) {
       <div class="declaration">
         <b>Declaration:</b><br>
         We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
-        All disputes are subject to jurisdiction of ${BUSINESS.state} courts only.
+        All disputes are subject to jurisdiction of ${BUSINESS.state || 'local'} courts only.
       </div>
       <div class="sig-box">
         <div class="sig-biz">${BUSINESS.name}</div>
@@ -420,25 +524,22 @@ export function printGSTInvoice(sale, firm) {
 </html>`;
 
   const win = window.open('', '_blank', 'width=960,height=800');
+  if (!win) { alert('Pop-up blocked. Please allow pop-ups for this site.'); return; }
   win.document.write(html);
   win.document.close();
   win.focus();
-  // Auto-trigger print after render
-  win.addEventListener('load', () => {
-    setTimeout(() => win.print(), 300);
-  });
 }
 
 /* ─── Purchase Receipt function ─────────────────────────────── */
 export function printPurchaseReceipt(purchase, firm) {
   const BUSINESS = {
-    name: firm?.name ?? '',
-    address: firm?.address ?? '',
-    pincode: firm?.pincode ?? '',
-    gstin: firm?.gstin ?? '',
-    phone: firm?.phone ?? '',
-    email: firm?.email ?? '',
-    state: firm?.state ?? '',
+    name:      firm?.name      ?? '',
+    address:   firm?.address   ?? '',
+    pincode:   firm?.pincode   ?? '',
+    gstin:     firm?.gstin     ?? '',
+    phone:     firm?.phone     ?? '',
+    email:     firm?.email     ?? '',
+    state:     firm?.state     ?? '',
     stateCode: firm?.stateCode ?? '',
   };
   const isInterState = purchase.isInterState;
@@ -479,14 +580,14 @@ export function printPurchaseReceipt(purchase, firm) {
   }).join('');
 
   const itemHeader = isInterState ? `<tr>
-    <th class="tc">Sr.</th><th>Description</th><th class="tc">HSN</th>
-    <th class="tr">Qty</th><th class="tr">Rate</th><th class="tr">Taxable</th>
-    <th class="tc">IGST %</th><th class="tr">IGST Amt</th><th class="tr">Total</th>
+    <th class="tc" style="width:4%">Sr.</th><th style="width:28%">Description</th><th class="tc" style="width:10%">HSN</th>
+    <th class="tr" style="width:7%">Qty</th><th class="tr" style="width:12%">Rate</th><th class="tr" style="width:13%">Taxable</th>
+    <th class="tc" style="width:7%">IGST%</th><th class="tr" style="width:10%">IGST Amt</th><th class="tr" style="width:9%">Total</th>
   </tr>` : `<tr>
-    <th class="tc">Sr.</th><th>Description</th><th class="tc">HSN</th>
-    <th class="tr">Qty</th><th class="tr">Rate</th><th class="tr">Taxable</th>
-    <th class="tc">CGST %</th><th class="tr">CGST Amt</th>
-    <th class="tc">SGST %</th><th class="tr">SGST Amt</th><th class="tr">Total</th>
+    <th class="tc" style="width:4%">Sr.</th><th style="width:24%">Description</th><th class="tc" style="width:9%">HSN</th>
+    <th class="tr" style="width:6%">Qty</th><th class="tr" style="width:10%">Rate</th><th class="tr" style="width:11%">Taxable</th>
+    <th class="tc" style="width:6%">CGST%</th><th class="tr" style="width:9%">CGST</th>
+    <th class="tc" style="width:6%">SGST%</th><th class="tr" style="width:9%">SGST</th><th class="tr" style="width:6%">Total</th>
   </tr>`;
 
   /* HSN summary */
@@ -513,60 +614,23 @@ export function printPurchaseReceipt(purchase, firm) {
     : `<div class="tot-row"><span>CGST</span><span>${fc(purchase.totalCgst)}</span></div>
        <div class="tot-row"><span>SGST / UTGST</span><span>${fc(purchase.totalSgst)}</span></div>`;
 
+  const rawTotal = (purchase.subtotal || 0) + (purchase.totalTax || 0);
+  const roundOffAmt = (purchase.totalAmount || 0) - rawTotal;
+  const roundOffRow = Math.abs(roundOffAmt) >= 0.01
+    ? `<div class="tot-row roundoff"><span>Round Off</span><span>${roundOffAmt > 0 ? '+' : ''}${fc(roundOffAmt)}</span></div>`
+    : '';
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Purchase Receipt — ${purchase.invoiceNumber}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; background: #fff; }
-    .invoice { max-width: 210mm; margin: 0 auto; padding: 12mm 14mm; }
-    @media print { body { margin: 0; } .invoice { padding: 8mm 10mm; max-width: 100%; } .no-print { display: none !important; } }
-    .outer-box { border: 1.5px solid #111; }
-    .title-bar { text-align: center; font-size: 14px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; padding: 6px 0; border-bottom: 1.5px solid #111; background: #052e16; color: #fff; }
-    .two-col { display: flex; border-bottom: 1px solid #111; }
-    .two-col .left  { flex: 1; padding: 10px 12px; border-right: 1px solid #111; }
-    .two-col .right { flex: 1; padding: 10px 12px; }
-    .biz-name { font-size: 14px; font-weight: 800; color: #052e16; }
-    .biz-detail { font-size: 10.5px; color: #374151; margin-top: 2px; line-height: 1.6; }
-    .gstin-tag { font-weight: 700; color: #111; }
-    .sec-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 5px; }
-    .meta-table { width: 100%; border-collapse: collapse; }
-    .meta-table td { padding: 3px 0; font-size: 11px; }
-    .meta-table td:first-child { width: 110px; color: #6b7280; }
-    .meta-table td:last-child  { font-weight: 600; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .tbl th { background: #052e16; color: #fff; padding: 6px 8px; font-size: 10px; font-weight: 700; border: 1px solid #111; text-align: left; }
-    .tbl td { padding: 5px 8px; border: 1px solid #ddd; vertical-align: top; }
-    .tbl tbody tr:last-child td { border-bottom: 1px solid #111; }
-    .tbl tfoot td { border: 1px solid #111; }
-    .tc { text-align: center; } .tr { text-align: right; } .b { font-weight: 700; }
-    .sm { font-size: 9.5px; color: #6b7280; }
-    .totrow { background: #f0fdf4; font-weight: 700; }
-    .totals-outer { display: flex; border-top: 1px solid #111; }
-    .words-box { flex: 1; padding: 10px 12px; border-right: 1px solid #111; }
-    .words-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 4px; }
-    .words-text { font-size: 11px; font-weight: 600; font-style: italic; line-height: 1.5; }
-    .totals-box { min-width: 220px; padding: 10px 12px; }
-    .tot-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11.5px; }
-    .tot-row.grand { font-size: 13px; font-weight: 800; color: #052e16; border-top: 1.5px solid #052e16; margin-top: 6px; padding-top: 6px; }
-    .hsn-title { background: #f0fdf4; border-top: 1.5px solid #111; border-bottom: 1px solid #111; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; padding: 5px 12px; color: #052e16; }
-    .footer-outer { display: flex; border-top: 1px solid #111; }
-    .declaration { flex: 1; padding: 10px 12px; border-right: 1px solid #111; font-size: 10px; color: #374151; line-height: 1.7; }
-    .sig-box { min-width: 180px; padding: 10px 12px; text-align: center; }
-    .sig-line { border-top: 1px solid #111; margin-top: 38px; font-size: 10px; color: #374151; padding-top: 4px; }
-    .sig-biz { font-weight: 700; font-size: 11px; }
-    .print-btn-bar { display: flex; justify-content: center; gap: 12px; padding: 16px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
-    .btn-print { background: #16a34a; color: #fff; border: none; padding: 10px 28px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
-    .btn-close { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
-  </style>
+  <style>${sharedCSS()}</style>
+  ${paperScript()}
 </head>
 <body>
-<div class="no-print print-btn-bar">
-  <button class="btn-print" onclick="window.print()">Print Receipt</button>
-  <button class="btn-close" onclick="window.close()">Close</button>
-</div>
+${printControlsBar('Print Receipt')}
 <div class="invoice">
   <div class="outer-box">
     <div class="title-bar">Purchase Receipt</div>
@@ -593,8 +657,8 @@ export function printPurchaseReceipt(purchase, firm) {
     </div>
 
     <!-- Supplier Details -->
-    <div class="two-col">
-      <div class="left" style="flex:1">
+    <div class="two-col right-align">
+      <div class="left">
         <div class="sec-label">Supplier / Seller</div>
         <div class="biz-name">${purchase.supplierName}</div>
         <div class="biz-detail">
@@ -603,11 +667,9 @@ export function printPurchaseReceipt(purchase, firm) {
           ${purchase.supplierPhone ? '<br>Ph: ' + purchase.supplierPhone : ''}
         </div>
       </div>
-      <div class="right" style="flex:1; display:flex; align-items:flex-end; justify-content:flex-end;">
-        <div style="text-align:right">
-          <div class="sec-label">Total Purchase Value</div>
-          <div style="font-size:20px;font-weight:800;color:#16a34a;">${fc(purchase.totalAmount)}</div>
-        </div>
+      <div class="right">
+        <div class="sec-label">Total Purchase Value</div>
+        <div style="font-size:18px;font-weight:800;color:#16a34a;">${fc(purchase.totalAmount)}</div>
       </div>
     </div>
 
@@ -627,6 +689,7 @@ export function printPurchaseReceipt(purchase, firm) {
         <div class="tot-row"><span>Taxable Amount</span><span>${fc(purchase.subtotal)}</span></div>
         ${taxLines}
         <div class="tot-row"><span>Total Tax</span><span>${fc(purchase.totalTax)}</span></div>
+        ${roundOffRow}
         <div class="tot-row grand"><span>Grand Total</span><span>${fc(purchase.totalAmount)}</span></div>
       </div>
     </div>
@@ -644,7 +707,7 @@ export function printPurchaseReceipt(purchase, firm) {
       <div class="declaration">
         <b>Note:</b><br>
         This is a purchase receipt for internal records. Goods received as per above details.
-        All disputes are subject to jurisdiction of ${BUSINESS.state} courts only.
+        All disputes are subject to jurisdiction of ${BUSINESS.state || 'local'} courts only.
       </div>
       <div class="sig-box">
         <div class="sig-biz">${BUSINESS.name}</div>
@@ -657,9 +720,8 @@ export function printPurchaseReceipt(purchase, firm) {
 </html>`;
 
   const win = window.open('', '_blank', 'width=960,height=800');
+  if (!win) { alert('Pop-up blocked. Please allow pop-ups for this site.'); return; }
   win.document.write(html);
   win.document.close();
   win.focus();
-  win.addEventListener('load', () => { setTimeout(() => win.print(), 300); });
 }
-
