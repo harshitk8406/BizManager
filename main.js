@@ -8,6 +8,9 @@ function startBackend() {
   // Pass environment variables to the backend
   process.env.NODE_ENV = 'production';
   process.env.PORT = '5000';
+  // Pass the app root path so backend can resolve frontend/dist correctly
+  // even when running from inside an ASAR archive
+  process.env.APP_PATH = app.getAppPath();
 
   console.log('Starting backend server inline...');
   try {
@@ -30,23 +33,12 @@ function createWindow() {
     title: "BizManager"
   });
 
-  const url = 'http://localhost:5000';
-
-  const loadApp = () => {
-    if (!mainWindow) return;
-    mainWindow.loadURL(url).catch((err) => {
-      console.log('Failed to connect, retrying in 500ms...', err.message);
-      setTimeout(loadApp, 500);
-    });
-  };
-
-  // Listen for fail-load and retry (handles server not being fully ready yet)
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.log(`Failed to load: ${errorDescription} (${errorCode}). Retrying in 1s...`);
-    setTimeout(loadApp, 1000);
-  });
-
-  loadApp();
+  // Load the frontend HTML file directly — no HTTP serving needed.
+  // app.getAppPath() returns the real resources/app directory (asar:false).
+  // API calls (http://localhost:5000/api) still go through Express.
+  const indexPath = path.join(app.getAppPath(), 'frontend', 'dist', 'index.html');
+  console.log('Loading frontend from:', indexPath);
+  mainWindow.loadFile(indexPath);
 
   mainWindow.on('closed', () => {
     mainWindow = null;

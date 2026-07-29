@@ -9,8 +9,19 @@ const app = express();
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173', 'http://localhost:3000'];
-app.use(cors({ origin: allowedOrigins }));
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5000'];
+
+// Allow null origin for file:// protocol (used by Electron loadFile)
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all in Electron context
+    }
+  },
+  credentials: true
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -26,21 +37,12 @@ app.use('/api/sales', protect, requireFirm, require('./src/routes/sales'));
 app.use('/api/reports', protect, requireFirm, require('./src/routes/reports'));
 app.use('/api/payments', protect, requireFirm, require('./src/routes/payments'));
 app.use('/api/challans', protect, requireFirm, require('./src/routes/challan'));
+app.use('/api/ai',       protect, requireFirm, require('./src/routes/ai'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
-// Serve static assets in production
-if (process.env.NODE_ENV === 'production') {
-  const path = require('path');
-  app.use(express.static(path.join(__dirname, '../frontend/dist')));
-
-  app.get('*', (req, res) => {
-    if (req.path.startsWith('/api/')) {
-      return res.status(404).json({ message: 'API route not found' });
-    }
-    res.sendFile(path.resolve(__dirname, '../', 'frontend', 'dist', 'index.html'));
-  });
-}
+// Note: Static file serving removed — Electron loads frontend/dist/index.html
+// directly via loadFile(). Express only handles /api/* routes.
 
 app.use(errorHandler);
 

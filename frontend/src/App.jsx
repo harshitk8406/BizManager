@@ -1,4 +1,24 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Component } from 'react';
+
+// Error boundary to show real errors instead of blank pages
+class ErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, fontFamily: 'monospace', background: '#fef2f2', color: '#dc2626', borderRadius: 12, margin: 24, border: '1px solid #fca5a5' }}>
+          <h2 style={{ marginTop: 0 }}>⚠ Page Crashed — Error Details:</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{this.state.error?.toString()}</pre>
+          <pre style={{ color: '#6b7280', fontSize: 11 }}>{this.state.error?.stack}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 12, padding: '8px 16px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>Try Again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { useAuth } from './context/AuthContext';
 import Dashboard from './pages/Dashboard';
 import ItemList from './pages/Items/ItemList';
@@ -32,7 +52,7 @@ const ProtectedRoute = ({ children, requireFirm = true }) => {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
@@ -60,10 +80,10 @@ export default function App() {
         <Route path="/challans/edit/:id"       element={<ProtectedRoute><ChallanForm /></ProtectedRoute>} />
         <Route path="/reports/stock"           element={<ProtectedRoute><StockReport /></ProtectedRoute>} />
         <Route path="/reports/stock-detail"    element={<ProtectedRoute><StockDetailReport /></ProtectedRoute>} />
-        <Route path="/reports/gst"             element={<ProtectedRoute><GSTReports /></ProtectedRoute>} />
+        <Route path="/reports/gst"             element={<ProtectedRoute><ErrorBoundary><GSTReports /></ErrorBoundary></ProtectedRoute>} />
         <Route path="/payments"                element={<ProtectedRoute><PaymentList /></ProtectedRoute>} />
         <Route path="/profile"                 element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

@@ -14,6 +14,7 @@ const requireFirm = asyncHandler(async (req, res, next) => {
   }
 
   req.firmId = firmId;
+  req.firm   = firm;   // attach full firm object for use in controllers
   next();
 });
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import KeyboardHelp from '../UI/KeyboardHelp';
+import AIChatbot from '../AI/AIChatbot';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { useAuth } from '../../context/AuthContext';
 
@@ -10,6 +11,7 @@ export default function Layout({ title, children }) {
   const { logout } = useAuth();
   const [helpOpen, setHelpOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem('theme') === 'dark';
   });
@@ -34,6 +36,7 @@ export default function Layout({ title, children }) {
   useKeyboardShortcut('alt+r', () => navigate('/reports/stock'));
   useKeyboardShortcut('alt+t', () => navigate('/reports/stock-detail'));
   useKeyboardShortcut('alt+g', () => navigate('/reports/gst'));
+  useKeyboardShortcut('alt+a', () => setAiOpen(o => !o));
 
   /* ── Alt+N → click the first .btn-primary on the page ──────── */
   useKeyboardShortcut('alt+n', () => {
@@ -129,6 +132,18 @@ export default function Layout({ title, children }) {
         </main>
       </div>
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {/* AI Chatbot floating widget */}
+      <AIChatbot open={aiOpen} onClose={() => setAiOpen(false)} />
+      <button
+        className="ai-fab"
+        onClick={() => setAiOpen(o => !o)}
+        title="AI Assistant (Alt+A)"
+        aria-label="Open AI assistant"
+      >
+        <span className="ai-fab-icon">✦</span>
+        <span className="ai-fab-label">AI</span>
+      </button>
     </div>
   );
 }

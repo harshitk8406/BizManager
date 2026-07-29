@@ -195,7 +195,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
             hsn_sc: String(h.hsnCode),
             desc:   h.description || "NA",
             uqc:    "OTH",
-            qty:    parseFloat(h.totalQuantity.toFixed(2)),
+            qty:    parseFloat(Number(h.totalQuantity || 0).toFixed(2)),
             val:    parseFloat(h.totalAmount.toFixed(2)),
             txval:  parseFloat(h.totalTaxable.toFixed(2)),
             iamt:   parseFloat(h.totalIgst.toFixed(2)),
@@ -309,6 +309,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
 
   useEffect(() => {
     if (loading || !data || !showCharts) return;
+    if (!pieCanvasRef.current || !barCanvasRef.current) return;
 
     if (pieChartInstance.current) pieChartInstance.current.destroy();
     if (barChartInstance.current) barChartInstance.current.destroy();
@@ -316,40 +317,42 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
     const b2bTaxable = data.b2b.reduce((s, x) => s + x.totalTaxable, 0);
     const b2cTaxable = data.b2c.totalTaxable;
 
-    pieChartInstance.current = new Chart(pieCanvasRef.current.getContext('2d'), {
-      type: 'pie',
-      data: {
-        labels: ['B2B (Registered)', 'B2C (Retail)'],
-        datasets: [{
-          data: [b2bTaxable, b2cTaxable],
-          backgroundColor: ['#2563eb', '#d97706'], // Blue vs Orange
-          borderWidth: 1.5,
-          borderColor: '#ffffff'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              color: '#374151',
-              boxWidth: 12,
-              font: { family: 'Inter', size: 11, weight: 500 }
-            }
-          },
-          tooltip: {
-            backgroundColor: '#111827',
-            titleFont: { family: 'Inter', size: 12 },
-            bodyFont: { family: 'Inter', size: 12 },
-            callbacks: {
-              label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+    try {
+      pieChartInstance.current = new Chart(pieCanvasRef.current.getContext('2d'), {
+        type: 'pie',
+        data: {
+          labels: ['B2B (Registered)', 'B2C (Retail)'],
+          datasets: [{
+            data: [b2bTaxable, b2cTaxable],
+            backgroundColor: ['#2563eb', '#d97706'],
+            borderWidth: 1.5,
+            borderColor: '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                color: '#374151',
+                boxWidth: 12,
+                font: { family: 'Inter', size: 11, weight: 500 }
+              }
+            },
+            tooltip: {
+              backgroundColor: '#111827',
+              titleFont: { family: 'Inter', size: 12 },
+              bodyFont: { family: 'Inter', size: 12 },
+              callbacks: {
+                label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+              }
             }
           }
         }
-      }
-    });
+      });
+    } catch {}
 
     const rateTotals = {};
     data.hsnSummary.forEach(h => {
@@ -359,51 +362,47 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
     const barLabels = Object.keys(rateTotals).sort((a, b) => parseFloat(a) - parseFloat(b));
     const barData = barLabels.map(r => rateTotals[r]);
 
-    barChartInstance.current = new Chart(barCanvasRef.current.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: barLabels,
-        datasets: [{
-          label: 'Taxable Turnover',
-          data: barData,
-          backgroundColor: 'rgba(22, 163, 74, 0.8)', // Green
-          borderColor: '#16a34a',
-          borderWidth: 1.5,
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#111827',
-            titleFont: { family: 'Inter', size: 12 },
-            bodyFont: { family: 'Inter', size: 12 },
-            callbacks: {
-              label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-            }
-          }
+    try {
+      barChartInstance.current = new Chart(barCanvasRef.current.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: barLabels,
+          datasets: [{
+            label: 'Taxable Turnover',
+            data: barData,
+            backgroundColor: 'rgba(22, 163, 74, 0.8)',
+            borderColor: '#16a34a',
+            borderWidth: 1.5,
+            borderRadius: 4
+          }]
         },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: {
-              color: '#6b7280',
-              font: { family: 'Inter', size: 10 }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#111827',
+              titleFont: { family: 'Inter', size: 12 },
+              bodyFont: { family: 'Inter', size: 12 },
+              callbacks: {
+                label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+              }
             }
           },
-          y: {
-            grid: { color: '#f3f4f6' },
-            ticks: {
-              color: '#6b7280',
-              font: { family: 'Inter', size: 10 }
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#6b7280', font: { family: 'Inter', size: 10 } }
+            },
+            y: {
+              grid: { color: '#f3f4f6' },
+              ticks: { color: '#6b7280', font: { family: 'Inter', size: 10 } }
             }
           }
         }
-      }
-    });
+      });
+    } catch {}
 
     return () => {
       if (pieChartInstance.current) pieChartInstance.current.destroy();
@@ -764,7 +763,7 @@ function GSTR1Tab({ activeFirm, onDownloaded }) {
                       <td style={{ padding: '12px 14px' }}><span className="badge badge-purple" style={{ fontWeight: 600 }}>{h.hsnCode}</span></td>
                       <td className="fw-600" style={{ padding: '12px 14px' }}>{h.description}</td>
                       <td style={{ padding: '12px 14px' }}><span className="badge badge-teal" style={{ fontWeight: 600 }}>{h.gstPercentage}%</span></td>
-                      <td className="text-right fw-600" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{h.totalQuantity.toFixed(3)}</td>
+                      <td className="text-right fw-600" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{Number(h.totalQuantity || 0).toFixed(3)}</td>
                       <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(h.totalTaxable)}</td>
                       <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(h.totalCgst)}</td>
                       <td className="text-right" style={{ padding: '12px 14px', fontFamily: 'Inter, -apple-system, sans-serif', fontFeatureSettings: '"tnum"' }}>{formatCurrency(h.totalSgst)}</td>
@@ -974,6 +973,7 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
 
   useEffect(() => {
     if (loading || !data || !showCharts) return;
+    if (!pieCanvasRef.current || !barCanvasRef.current) return;
 
     if (pieChartInstance.current) pieChartInstance.current.destroy();
     if (barChartInstance.current) barChartInstance.current.destroy();
@@ -981,104 +981,80 @@ function GSTR3BTab({ activeFirm, onDownloaded }) {
     const outputTax = data.outward.total.tax;
     const inputITC = data.itc.total.tax;
 
-    // Output Tax vs ITC (Pie Chart)
-    pieChartInstance.current = new Chart(pieCanvasRef.current.getContext('2d'), {
-      type: 'pie',
-      data: {
-        labels: ['Output Tax (Sales)', 'Input Tax Credit (ITC)'],
-        datasets: [{
-          data: [outputTax, inputITC],
-          backgroundColor: ['#dc2626', '#16a34a'], // Red vs Green
-          borderWidth: 1.5,
-          borderColor: '#ffffff'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              color: '#374151',
-              boxWidth: 12,
-              font: { family: 'Inter', size: 11, weight: 500 }
-            }
-          },
-          tooltip: {
-            backgroundColor: '#111827',
-            titleFont: { family: 'Inter', size: 12 },
-            bodyFont: { family: 'Inter', size: 12 },
-            callbacks: {
-              label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-            }
-          }
-        }
-      }
-    });
-
-    // CGST vs SGST vs IGST Component Comparison (Grouped Bar Chart)
-    barChartInstance.current = new Chart(barCanvasRef.current.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: ['CGST', 'SGST / UTGST', 'IGST'],
-        datasets: [
-          {
-            label: 'Output Tax (Sales)',
-            data: [data.outward.total.cgst, data.outward.total.sgst, data.outward.total.igst],
-            backgroundColor: 'rgba(220, 38, 38, 0.8)', // Red
-            borderColor: '#dc2626',
+    try {
+      pieChartInstance.current = new Chart(pieCanvasRef.current.getContext('2d'), {
+        type: 'pie',
+        data: {
+          labels: ['Output Tax (Sales)', 'Input Tax Credit (ITC)'],
+          datasets: [{
+            data: [outputTax, inputITC],
+            backgroundColor: ['#dc2626', '#16a34a'],
             borderWidth: 1.5,
-            borderRadius: 4
-          },
-          {
-            label: 'Input Tax Credit (ITC)',
-            data: [data.itc.total.cgst, data.itc.total.sgst, data.itc.total.igst],
-            backgroundColor: 'rgba(22, 163, 74, 0.8)', // Green
-            borderColor: '#16a34a',
-            borderWidth: 1.5,
-            borderRadius: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: {
-              color: '#374151',
-              font: { family: 'Inter', size: 10, weight: 500 }
-            }
-          },
-          tooltip: {
-            backgroundColor: '#111827',
-            titleFont: { family: 'Inter', size: 12 },
-            bodyFont: { family: 'Inter', size: 12 },
-            callbacks: {
-              label: (context) => ` ${context.dataset.label}: Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-            }
-          }
+            borderColor: '#ffffff'
+          }]
         },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: {
-              color: '#6b7280',
-              font: { family: 'Inter', size: 10 }
-            }
-          },
-          y: {
-            grid: { color: '#f3f4f6' },
-            ticks: {
-              color: '#6b7280',
-              font: { family: 'Inter', size: 10 }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: '#374151', boxWidth: 12, font: { family: 'Inter', size: 11, weight: 500 } }
+            },
+            tooltip: {
+              backgroundColor: '#111827',
+              titleFont: { family: 'Inter', size: 12 },
+              bodyFont: { family: 'Inter', size: 12 },
+              callbacks: { label: (context) => ` Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
             }
           }
         }
-      }
-    });
+      });
+    } catch {}
+
+    try {
+      barChartInstance.current = new Chart(barCanvasRef.current.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: ['CGST', 'SGST / UTGST', 'IGST'],
+          datasets: [
+            {
+              label: 'Output Tax (Sales)',
+              data: [data.outward.total.cgst, data.outward.total.sgst, data.outward.total.igst],
+              backgroundColor: 'rgba(220, 38, 38, 0.8)',
+              borderColor: '#dc2626',
+              borderWidth: 1.5,
+              borderRadius: 4
+            },
+            {
+              label: 'Input Tax Credit (ITC)',
+              data: [data.itc.total.cgst, data.itc.total.sgst, data.itc.total.igst],
+              backgroundColor: 'rgba(22, 163, 74, 0.8)',
+              borderColor: '#16a34a',
+              borderWidth: 1.5,
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { color: '#374151', font: { family: 'Inter', size: 10, weight: 500 } } },
+            tooltip: {
+              backgroundColor: '#111827',
+              titleFont: { family: 'Inter', size: 12 },
+              bodyFont: { family: 'Inter', size: 12 },
+              callbacks: { label: (context) => ` ${context.dataset.label}: Rs. ${context.raw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#6b7280', font: { family: 'Inter', size: 10 } } },
+            y: { grid: { color: '#f3f4f6' }, ticks: { color: '#6b7280', font: { family: 'Inter', size: 10 } } }
+          }
+        }
+      });
+    } catch {}
 
     return () => {
       if (pieChartInstance.current) pieChartInstance.current.destroy();

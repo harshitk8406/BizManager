@@ -177,13 +177,13 @@ const getGSTR1 = asyncHandler(async (req, res) => {
       if (!hsnMap[key]) {
         hsnMap[key] = { hsnCode: item.hsnCode, description: item.itemName, gstPercentage: item.gstPercentage, totalQuantity: 0, totalTaxable: 0, totalCgst: 0, totalSgst: 0, totalIgst: 0, totalTax: 0, totalAmount: 0 };
       }
-      hsnMap[key].totalQuantity += item.quantity   || 0;
-      hsnMap[key].totalTaxable  += item.taxableAmount || 0;
-      hsnMap[key].totalCgst     += item.cgst        || 0;
-      hsnMap[key].totalSgst     += item.sgst        || 0;
-      hsnMap[key].totalIgst     += item.igst        || 0;
-      hsnMap[key].totalTax      += item.totalTax    || 0;
-      hsnMap[key].totalAmount   += item.amount      || 0;
+      hsnMap[key].totalQuantity += Number(item.quantity)      || 0;
+      hsnMap[key].totalTaxable  += Number(item.taxableAmount)  || 0;
+      hsnMap[key].totalCgst     += Number(item.cgst)           || 0;
+      hsnMap[key].totalSgst     += Number(item.sgst)           || 0;
+      hsnMap[key].totalIgst     += Number(item.igst)           || 0;
+      hsnMap[key].totalTax      += Number(item.totalTax)       || 0;
+      hsnMap[key].totalAmount   += Number(item.amount)         || 0;
     });
   });
 

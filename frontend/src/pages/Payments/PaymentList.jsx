@@ -2,16 +2,10 @@ import { useState, useEffect } from 'react';
 import Layout from '../../components/Layout/Layout';
 import Modal from '../../components/UI/Modal';
 import Toast, { useToast } from '../../components/UI/Toast';
-import { 
-  getPayments, 
-  getPaymentSummary, 
-  getPartyBalances, 
-  createPayment, 
-  updatePayment, 
-  deletePayment 
-} from '../../api/payments';
+import { getPayments, getPaymentSummary, getPartyBalances, createPayment, updatePayment, deletePayment } from '../../api/payments';
 import { getCustomers } from '../../api/customers';
 import { getSuppliers } from '../../api/suppliers';
+import { generatePaymentReminder } from '../../api/ai';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { useFormShortcuts } from '../../hooks/useKeyboardShortcut';
 
@@ -60,6 +54,12 @@ export default function PaymentList() {
   const [form, setForm] = useState(EMPTY);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
+  
+  // AI Reminder state
+  const [reminderModal, setReminderModal] = useState(null); // { customerName, balance, phone }
+  const [reminderText, setReminderText] = useState('');
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   
   const { toast, show, hide } = useToast();
 
@@ -224,6 +224,28 @@ export default function PaymentList() {
     onSave: modalOpen ? handleSave : null,
     onCancel: modalOpen ? () => setModalOpen(false) : null
   });
+
+  const openReminderModal = async (customer) => {
+    setReminderModal(customer);
+    setReminderText('');
+    setCopied(false);
+    setReminderLoading(true);
+    try {
+      const res = await generatePaymentReminder(customer.name, customer.balance, customer.phone || '', customer._id || '');
+      setReminderText(res.data.message);
+    } catch (e) {
+      setReminderText('Could not generate reminder. Please check your internet connection.');
+    } finally {
+      setReminderLoading(false);
+    }
+  };
+
+  const handleCopyReminder = () => {
+    navigator.clipboard.writeText(reminderText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <Layout title="Payments">
@@ -480,6 +502,7 @@ export default function PaymentList() {
                   <th className="text-right">Total Sales</th>
                   <th className="text-right">Total Payments Received</th>
                   <th className="text-right">Outstanding Balance</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -509,6 +532,18 @@ export default function PaymentList() {
                       {formatCurrency(c.balance)}
                       {c.balance > 0 && <span style={{ fontSize: '9px', fontWeight: 600, marginLeft: '4px', color: 'var(--warning)' }}>(DUE)</span>}
                       {c.balance < 0 && <span style={{ fontSize: '9px', fontWeight: 600, marginLeft: '4px', color: 'var(--success)' }}>(ADVANCE)</span>}
+                    </td>
+                    <td>
+                      {c.balance > 0 && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => openReminderModal(c)}
+                          title="Generate AI payment reminder"
+                          style={{ whiteSpace: 'nowrap' }}
+                        >
+                          ✦ Reminder
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -776,6 +811,46 @@ export default function PaymentList() {
           Are you sure you want to delete this payment entry of <strong>{formatCurrency(deleteModal?.amount)}</strong> logged on <strong>{deleteModal && formatDate(deleteModal.date)}</strong>? This will affect the cash flow balance calculations.
         </div>
       </Modal>
+      {/* AI Payment Reminder Modal */}
+      {reminderModal && (
+        <div className="ai-reminder-overlay" onClick={() => setReminderModal(null)}>
+          <div className="ai-reminder-modal" onClick={e => e.stopPropagation()}>
+            <div className="ai-reminder-header">
+              <div>
+                <div className="ai-reminder-title">✦ AI Payment Reminder</div>
+                <div className="ai-reminder-subtitle">For {reminderModal.name} · Due: {formatCurrency(reminderModal.balance)}</div>
+              </div>
+              <button className="ai-chat-close" onClick={() => setReminderModal(null)}>✕</button>
+            </div>
+            {reminderLoading ? (
+              <div className="ai-insight-shimmer" style={{ padding: '16px 0' }}>
+                <div className="ai-shimmer-line" />
+                <div className="ai-shimmer-line" style={{ width: '80%' }} />
+                <div className="ai-shimmer-line" style={{ width: '60%' }} />
+              </div>
+            ) : (
+              <>
+                <textarea
+                  className="ai-reminder-textarea"
+                  value={reminderText}
+                  onChange={e => setReminderText(e.target.value)}
+                  rows={5}
+                />
+                <div className="ai-reminder-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleCopyReminder}
+                  >
+                    {copied ? '✓ Copied!' : '📋 Copy Message'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => openReminderModal(reminderModal)}>↻ Regenerate</button>
+                  <button className="btn btn-secondary" onClick={() => setReminderModal(null)}>Close</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
     </Layout>
   );

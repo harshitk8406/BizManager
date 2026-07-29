@@ -24,7 +24,7 @@ const getItems = asyncHandler(async (req, res) => {
     $or: [
       { itemName: { $regex: search, $options: 'i' } },
       { itemCode: { $regex: search, $options: 'i' } },
-      { hsnCode:  { $regex: search, $options: 'i' } },
+      { hsnCode: { $regex: search, $options: 'i' } },
     ],
   };
 

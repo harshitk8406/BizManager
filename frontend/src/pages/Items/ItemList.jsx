@@ -3,6 +3,7 @@ import Layout from '../../components/Layout/Layout';
 import Modal from '../../components/UI/Modal';
 import Toast, { useToast } from '../../components/UI/Toast';
 import { getItems, createItem, updateItem, deleteItem } from '../../api/items';
+import { suggestHSN } from '../../api/ai';
 import { formatCurrency } from '../../utils/format';
 import { useTableKeyNav } from '../../hooks/useTableKeyNav';
 import { useKeyboardShortcut, useFormShortcuts } from '../../hooks/useKeyboardShortcut';
@@ -29,6 +30,8 @@ export default function ItemList() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editCode, setEditCode] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [hsnLoading, setHsnLoading] = useState(false);
+  const [hsnSuggested, setHsnSuggested] = useState(false);
   const { toast, show, hide } = useToast();
 
   // Keyboard support
@@ -42,9 +45,10 @@ export default function ItemList() {
 
   useEffect(() => { load(); }, [search]);
 
-  const openAdd = () => { setForm(EMPTY_FORM); setEditCode(null); setModalOpen(true); };
+  const openAdd = () => { setForm(EMPTY_FORM); setEditCode(null); setHsnSuggested(false); setModalOpen(true); };
 
   const openEdit = (item) => {
+    setHsnSuggested(false);
     setForm({
       itemCode: item.itemCode,
       itemName: item.itemName,
@@ -76,6 +80,22 @@ export default function ItemList() {
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleHsnSuggest = async () => {
+    if (!form.itemName.trim()) { show('Please enter an item name first', 'error'); return; }
+    setHsnLoading(true);
+    setHsnSuggested(false);
+    try {
+      const res = await suggestHSN(form.itemName, form.packingSize);
+      setForm(f => ({ ...f, hsnCode: res.data.hsnCode, gstPercentage: res.data.gstPercentage }));
+      setHsnSuggested(true);
+      show(`AI suggested HSN ${res.data.hsnCode} @ ${res.data.gstPercentage}% GST`, 'success');
+    } catch (e) {
+      show(e.message || 'Could not fetch suggestion', 'error');
+    } finally {
+      setHsnLoading(false);
+    }
+  };
 
   useFormShortcuts({ onSave: modalOpen ? handleSave : null });
 
@@ -184,7 +204,20 @@ export default function ItemList() {
           </div>
           <div className="form-group">
             <label className="form-label">HSN Code <span className="required">*</span></label>
-            <input className="form-control" value={form.hsnCode} onChange={e => set('hsnCode', e.target.value)} placeholder="e.g. 30049099" />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input className="form-control" value={form.hsnCode} onChange={e => { set('hsnCode', e.target.value); setHsnSuggested(false); }} placeholder="e.g. 30049099" style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleHsnSuggest}
+                disabled={hsnLoading}
+                title="Let AI suggest HSN code and GST %"
+                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                {hsnLoading ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> Thinking...</> : '✦ AI Suggest'}
+              </button>
+            </div>
+            {hsnSuggested && <div className="ai-badge">✦ AI suggested · verify before saving</div>}
           </div>
           <div className="form-group">
             <label className="form-label">GST Percentage <span className="required">*</span></label>

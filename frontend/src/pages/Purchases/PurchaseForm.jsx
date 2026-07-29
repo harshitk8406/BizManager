@@ -7,6 +7,7 @@ import Toast, { useToast } from '../../components/UI/Toast';
 import { getSuppliers, createSupplier } from '../../api/suppliers';
 import { getItems, createItem } from '../../api/items';
 import { createPurchase, getPurchaseById, updatePurchase } from '../../api/purchases';
+import { checkAnomaly } from '../../api/ai';
 import { calculateLineItem } from '../../utils/gst';
 import { formatCurrency, todayString, toInputDate } from '../../utils/format';
 import { useFormShortcuts } from '../../hooks/useKeyboardShortcut';
@@ -377,7 +378,21 @@ export default function PurchaseForm() {
     };
     try {
       if (isEdit) { await updatePurchase(id, payload); show('Purchase updated'); }
-      else        { await createPurchase(payload); show('Purchase saved'); }
+      else {
+        await createPurchase(payload);
+        show('Purchase saved');
+        // Non-blocking anomaly check after save
+        checkAnomaly({
+          type: 'purchase',
+          items: payload.items,
+          supplierName: supplier?.supplierName || '',
+          totalAmount: validLines.reduce((s, l) => s + Number(l.quantity) * Number(l.rate), 0)
+        }).then(res => {
+          if (res?.data?.anomaly && res?.data?.warning) {
+            show(`⚠️ AI Notice: ${res.data.warning}`, 'warning');
+          }
+        }).catch(() => {}); // silent fail
+      }
       setTimeout(() => navigate('/purchases'), 1000);
     } catch (e) {
       show(e.message, 'error');

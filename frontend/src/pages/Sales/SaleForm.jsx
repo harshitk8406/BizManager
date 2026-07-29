@@ -7,6 +7,7 @@ import Toast, { useToast } from '../../components/UI/Toast';
 import { getCustomers, createCustomer } from '../../api/customers';
 import { getItems, createItem } from '../../api/items';
 import { createSale, getSaleById, updateSale, getNextSaleInvoiceNumber } from '../../api/sales';
+import { checkAnomaly } from '../../api/ai';
 import { calculateLineItem } from '../../utils/gst';
 import { formatCurrency, todayString, toInputDate } from '../../utils/format';
 import { printGSTInvoice } from '../../utils/printInvoice';
@@ -448,6 +449,17 @@ export default function SaleForm() {
         sale.customerAddress = sale.customerAddress || customer.customerAddress;
         sale.customerPhone   = sale.customerPhone   || customer.customerPhone;
         setSavedSale(sale);
+        // Non-blocking anomaly check after save
+        checkAnomaly({
+          type: 'sale',
+          items: payload.items,
+          customerName: customer?.customerName || '',
+          totalAmount: validLines.reduce((s, l) => s + Number(l.quantity) * Number(l.rate), 0)
+        }).then(res => {
+          if (res?.data?.anomaly && res?.data?.warning) {
+            show(`⚠️ AI Notice: ${res.data.warning}`, 'warning');
+          }
+        }).catch(() => {}); // silent fail
       }
     } catch (e) {
       show(e.message, 'error');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout/Layout';
 import { getDashboardStats } from '../api/reports';
+import { getAIReportSummary } from '../api/ai';
 import { formatCurrency, formatDate } from '../utils/format';
 
 function StatCard({ label, value, color = 'green', abbr = '?' }) {
@@ -18,6 +19,9 @@ function StatCard({ label, value, color = 'green', abbr = '?' }) {
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   useEffect(() => {
     getDashboardStats()
@@ -25,6 +29,20 @@ export default function Dashboard() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const handleAIInsights = async () => {
+    setAiLoading(true);
+    setAiError('');
+    setAiSummary('');
+    try {
+      const res = await getAIReportSummary(stats);
+      setAiSummary(res.data.summary);
+    } catch (e) {
+      setAiError(e.message || 'Could not load AI insights. Please check your internet connection.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <Layout title="Dashboard">
@@ -38,6 +56,42 @@ export default function Dashboard() {
             <StatCard abbr="PU" label="This Month Purchases"     value={formatCurrency(stats.monthlyPurchases)}  color="green" />
             <StatCard abbr="SA" label="This Month Sales"         value={formatCurrency(stats.monthlySales)}      color="warning" />
             <StatCard abbr="OS" label="Out of Stock Items"       value={stats.lowStockItems}                     color="red" />
+          </div>
+
+          {/* AI Insights Card */}
+          <div className="ai-insight-card">
+            <div className="ai-insight-header">
+              <div className="ai-insight-title">
+                <span className="ai-insight-icon">✦</span>
+                AI Business Insights
+              </div>
+              {!aiSummary && !aiLoading && (
+                <button className="btn btn-primary btn-sm" onClick={handleAIInsights}>
+                  ✦ Generate Insights
+                </button>
+              )}
+              {aiSummary && (
+                <button className="btn btn-secondary btn-sm" onClick={handleAIInsights}>
+                  ↻ Refresh
+                </button>
+              )}
+            </div>
+            {aiLoading && (
+              <div className="ai-insight-shimmer">
+                <div className="ai-shimmer-line" />
+                <div className="ai-shimmer-line" style={{ width: '85%' }} />
+                <div className="ai-shimmer-line" style={{ width: '70%' }} />
+              </div>
+            )}
+            {aiSummary && !aiLoading && (
+              <p className="ai-insight-text">{aiSummary}</p>
+            )}
+            {aiError && !aiLoading && (
+              <p className="ai-insight-error">{aiError}</p>
+            )}
+            {!aiSummary && !aiLoading && !aiError && (
+              <p className="ai-insight-placeholder">Click "Generate Insights" to get an AI-powered summary of your business performance.</p>
+            )}
           </div>
 
           <div className="dashboard-grid">
