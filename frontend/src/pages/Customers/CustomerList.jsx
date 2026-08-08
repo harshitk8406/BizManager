@@ -21,6 +21,7 @@ export default function CustomerList() {
 
   const { getTableProps, getRowProps } = useTableKeyNav(customers, (c) => openEdit(c));
   useKeyboardShortcut('slash', () => document.getElementById('customer-search-input')?.focus());
+  useKeyboardShortcut('alt+n', () => { if (!modalOpen) openAdd(); }, { deps: [modalOpen] });
 
   const load = () => {
     setLoading(true);
@@ -91,7 +92,9 @@ export default function CustomerList() {
             <span className="search-icon">&#x2315;</span>
             <input id="customer-search-input" placeholder="Search by name or GST..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={openAdd}>+ Add Customer</button>
+          <button className="btn btn-primary" onClick={openAdd} title="Add Customer (Alt+N)">
+            + Add Customer <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
+          </button>
         </div>
       </div>
 

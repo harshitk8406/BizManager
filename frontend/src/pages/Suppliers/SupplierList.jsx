@@ -21,6 +21,7 @@ export default function SupplierList() {
 
   const { getTableProps, getRowProps } = useTableKeyNav(suppliers, (s) => openEdit(s));
   useKeyboardShortcut('slash', () => document.getElementById('supplier-search-input')?.focus());
+  useKeyboardShortcut('alt+n', () => { if (!modalOpen) openAdd(); }, { deps: [modalOpen] });
 
   const load = () => {
     setLoading(true);
@@ -91,7 +92,9 @@ export default function SupplierList() {
             <span className="search-icon">&#x2315;</span>
             <input id="supplier-search-input" placeholder="Search by name or GST..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={openAdd}>+ Add Supplier</button>
+          <button className="btn btn-primary" onClick={openAdd} title="Add Supplier (Alt+N)">
+            + Add Supplier <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
+          </button>
         </div>
       </div>
 

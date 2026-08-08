@@ -14,10 +14,15 @@ import { printGSTInvoice } from '../../utils/printInvoice';
 import { useFormShortcuts } from '../../hooks/useKeyboardShortcut';
 import { useAuth } from '../../context/AuthContext';
 
-const EMPTY_ITEM = {
+let _lineKeyCounter = 0;
+const makeKey = () => `line-${++_lineKeyCounter}`;
+
+const EMPTY_ITEM = () => ({
+  _key: makeKey(),
   item: '', itemCode: '', itemName: '', hsnCode: '',
   packingSize: '', quantity: 1, rate: 0, gstPercentage: 5,
-};
+  itemQuery: '',
+});
 
 const EMPTY_CUSTOMER_FORM = {
   customerCode: '', gstNumber: '', customerName: '', customerAddress: '', customerPhone: '',
@@ -277,8 +282,7 @@ export default function SaleForm() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [date, setDate] = useState(todayString());
   const [isInterState, setIsInterState] = useState(false);
-  const [lines, setLines] = useState([{ ...EMPTY_ITEM }]);
-  const [itemQueries, setItemQueries] = useState(['']);
+  const [lines, setLines] = useState([EMPTY_ITEM()]);
   const [saving, setSaving] = useState(false);
   const [savedSale, setSavedSale] = useState(null);
   const [roundOff, setRoundOff] = useState(true);
@@ -308,11 +312,12 @@ export default function SaleForm() {
         setDate(toInputDate(s.date));
         setIsInterState(s.isInterState || false);
         setLines(s.items.map(i => ({
+          _key: makeKey(),
           item: i.item, itemCode: i.itemCode, itemName: i.itemName,
           hsnCode: i.hsnCode, packingSize: i.packingSize,
           quantity: i.quantity, rate: i.rate, gstPercentage: i.gstPercentage,
+          itemQuery: i.itemName,
         })));
-        setItemQueries(s.items.map(i => i.itemName));
         setRoundOff(s.roundOff !== undefined ? s.roundOff : true);
       }).catch(e => show(e.message, 'error'));
     }
@@ -347,17 +352,17 @@ export default function SaleForm() {
 
   /* ── Item row selection ─────────────────────────────────────── */
   const handleSelectItem = (idx, item) => {
-    const newLines = [...lines];
-    newLines[idx] = {
-      ...newLines[idx],
-      item: item._id, itemCode: item.itemCode, itemName: item.itemName,
-      hsnCode: item.hsnCode, packingSize: item.packingSize,
-      rate: item.salesPrice || 0, gstPercentage: item.gstPercentage || 18,
-    };
-    setLines(newLines);
-    const newQ = [...itemQueries];
-    newQ[idx] = item.itemName;
-    setItemQueries(newQ);
+    setLines(prev => {
+      const newLines = [...prev];
+      newLines[idx] = {
+        ...newLines[idx],
+        item: item._id, itemCode: item.itemCode, itemName: item.itemName,
+        hsnCode: item.hsnCode, packingSize: item.packingSize,
+        rate: item.salesPrice || 0, gstPercentage: item.gstPercentage || 18,
+        itemQuery: item.itemName,
+      };
+      return newLines;
+    });
   };
 
   const handleItemAdded = (item) => {
@@ -367,22 +372,24 @@ export default function SaleForm() {
 
   const openItemModal = (idx) => {
     setActiveItemIdx(idx);
-    setItemModalPrefill(itemQueries[idx] || '');
+    setItemModalPrefill(lines[idx]?.itemQuery || '');
     setItemModalOpen(true);
   };
 
   /* ── Line management ────────────────────────────────────────── */
   const updateLine = (idx, key, value) => {
-    const n = [...lines]; n[idx] = { ...n[idx], [key]: value }; setLines(n);
+    setLines(prev => {
+      const n = [...prev];
+      n[idx] = { ...n[idx], [key]: value };
+      return n;
+    });
   };
   const addLine = () => {
-    setLines([...lines, { ...EMPTY_ITEM }]);
-    setItemQueries([...itemQueries, '']);
+    setLines(prev => [...prev, EMPTY_ITEM()]);
   };
   const removeLine = (idx) => {
     if (lines.length === 1) return;
-    setLines(lines.filter((_, i) => i !== idx));
-    setItemQueries(itemQueries.filter((_, i) => i !== idx));
+    setLines(prev => prev.filter((_, i) => i !== idx));
   };
 
   /* ── Tab key handler for table rows ────────────────────────── */
@@ -625,13 +632,13 @@ export default function SaleForm() {
                   ? calculateLineItem(line.quantity, line.rate, line.gstPercentage, isInterState)
                   : null;
                 return (
-                  <tr key={idx}>
+                  <tr key={line._key}>
                     <td>
                       <div className="autocomplete-with-add">
                         <AutocompleteInput
                           id={`sitem-${idx}`}
-                          value={itemQueries[idx]}
-                          onChange={v => { const q = [...itemQueries]; q[idx] = v; setItemQueries(q); }}
+                          value={line.itemQuery}
+                          onChange={v => updateLine(idx, 'itemQuery', v)}
                           onSelect={(item) => handleSelectItem(idx, item)}
                           fetchSuggestions={fetchItems}
                           placeholder="Search item..."

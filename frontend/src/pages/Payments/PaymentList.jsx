@@ -7,7 +7,9 @@ import { getCustomers } from '../../api/customers';
 import { getSuppliers } from '../../api/suppliers';
 import { generatePaymentReminder } from '../../api/ai';
 import { formatCurrency, formatDate } from '../../utils/format';
-import { useFormShortcuts } from '../../hooks/useKeyboardShortcut';
+import { printDuesReport } from '../../utils/printInvoice';
+import { useFormShortcuts, useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
+import { useAuth } from '../../context/AuthContext';
 
 const EMPTY = {
   type: 'received', // 'received' (Customer) or 'sent' (Supplier)
@@ -62,6 +64,7 @@ export default function PaymentList() {
   const [copied, setCopied] = useState(false);
   
   const { toast, show, hide } = useToast();
+  const { activeFirm } = useAuth();
 
   const loadData = async () => {
     setLoading(true);
@@ -225,6 +228,9 @@ export default function PaymentList() {
     onCancel: modalOpen ? () => setModalOpen(false) : null
   });
 
+  // Alt+N → Add Payment Entry
+  useKeyboardShortcut('alt+n', () => { if (!modalOpen) openAdd(); }, { deps: [modalOpen] });
+
   const openReminderModal = async (customer) => {
     setReminderModal(customer);
     setReminderText('');
@@ -258,7 +264,9 @@ export default function PaymentList() {
           <p className="page-subtitle">Track payments sent and received, and manage cash flow balances</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary" onClick={openAdd}>+ Add Payment Entry</button>
+          <button className="btn btn-primary" onClick={openAdd} title="Add Payment Entry (Alt+N)">
+            + Add Payment Entry <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
+          </button>
         </div>
       </div>
 
@@ -491,6 +499,17 @@ export default function PaymentList() {
       {/* 2. Customer Dues & Balances Tab */}
       {activeTab === 'customers' && (
         <div className="card" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Customer Dues &amp; Balances</span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => printDuesReport('customers', balances.customers, activeFirm)}
+              title="Print Customer Dues Report"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              🖨 Print Report
+            </button>
+          </div>
           <div className="table-wrapper">
             <table className="data-table">
               <thead>
@@ -556,6 +575,17 @@ export default function PaymentList() {
       {/* 3. Supplier Dues & Balances Tab */}
       {activeTab === 'suppliers' && (
         <div className="card" style={{ padding: 0, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Supplier Dues &amp; Balances</span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => printDuesReport('suppliers', balances.suppliers, activeFirm)}
+              title="Print Supplier Dues Report"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              🖨 Print Report
+            </button>
+          </div>
           <div className="table-wrapper">
             <table className="data-table">
               <thead>

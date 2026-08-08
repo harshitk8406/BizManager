@@ -725,3 +725,230 @@ ${printControlsBar('Print Receipt')}
   win.document.close();
   win.focus();
 }
+
+/* ─── Dues / Balances Report Print ─────────────────────────── */
+/**
+ * @param {'customers'|'suppliers'} type
+ * @param {Array} rows   - array from balances.customers or balances.suppliers
+ * @param {Object} firm  - activeFirm from AuthContext
+ */
+export function printDuesReport(type, rows, firm) {
+  const isCustomer = type === 'customers';
+  const BUSINESS = {
+    name:    firm?.name    ?? '',
+    address: firm?.address ?? '',
+    gstin:   firm?.gstin   ?? '',
+    phone:   firm?.phone   ?? '',
+    state:   firm?.state   ?? '',
+  };
+
+  const today = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+  /* ── summary numbers ── */
+  let totalSales = 0, totalPaid = 0, totalBalance = 0;
+  rows.forEach(r => {
+    totalSales   += (isCustomer ? r.totalSales : r.totalPurchases) || 0;
+    totalPaid    += r.totalPaid   || 0;
+    totalBalance += r.balance     || 0;
+  });
+
+  const tableHeader = isCustomer ? `
+    <th style="width:8%">Code</th>
+    <th style="width:22%">Customer Name</th>
+    <th style="width:16%">GSTIN</th>
+    <th style="width:12%">Phone</th>
+    <th class="tr" style="width:14%">Total Sales</th>
+    <th class="tr" style="width:14%">Payments Recd.</th>
+    <th class="tr" style="width:14%">Outstanding</th>
+  ` : `
+    <th style="width:8%">Code</th>
+    <th style="width:22%">Supplier Name</th>
+    <th style="width:16%">GSTIN</th>
+    <th style="width:12%">Phone</th>
+    <th class="tr" style="width:14%">Total Purchases</th>
+    <th class="tr" style="width:14%">Payments Sent</th>
+    <th class="tr" style="width:14%">Outstanding</th>
+  `;
+
+  const tableRows = rows.map((r, i) => {
+    const sales   = isCustomer ? (r.totalSales || 0) : (r.totalPurchases || 0);
+    const paid    = r.totalPaid  || 0;
+    const bal     = r.balance    || 0;
+    const balColor = isCustomer
+      ? (bal > 0 ? '#b45309' : bal < 0 ? '#15803d' : '#6b7280')
+      : (bal > 0 ? '#dc2626' : bal < 0 ? '#15803d' : '#6b7280');
+    const balLabel = isCustomer
+      ? (bal > 0 ? ' (DUE)' : bal < 0 ? ' (ADV)' : '')
+      : (bal > 0 ? ' (TO PAY)' : bal < 0 ? ' (ADV)' : '');
+
+    return `<tr style="background:${i % 2 === 0 ? '#fff' : '#f9fafb'}">
+      <td><b>${r.code || '—'}</b></td>
+      <td><b>${r.name || '—'}</b></td>
+      <td style="font-size:9px">${r.gstNumber || '—'}</td>
+      <td>${r.phone || '—'}</td>
+      <td class="tr">${fc(sales)}</td>
+      <td class="tr" style="color:${isCustomer ? '#15803d' : '#dc2626'}">${fc(paid)}</td>
+      <td class="tr fw" style="color:${balColor}">${fc(bal)}<span style="font-size:8px">${balLabel}</span></td>
+    </tr>`;
+  }).join('');
+
+  const title = isCustomer ? 'CUSTOMER DUES & BALANCES' : 'SUPPLIER DUES & BALANCES';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title} — ${BUSINESS.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; background: #fff; }
+    .no-print {}
+    .print-controls {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; padding: 14px 20px;
+      background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+      font-family: Arial, sans-serif; font-size: 13px;
+    }
+    .print-controls label { font-weight: 600; color: #374151; }
+    .print-controls select {
+      padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db;
+      font-size: 13px; background: #fff; cursor: pointer;
+    }
+    .btn-print { background: #16a34a; color: #fff; border: none; padding: 9px 26px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
+    .btn-close  { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 9px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+    .wrap { width: 100%; max-width: 210mm; margin: 0 auto; padding: 10mm 12mm; }
+    .outer { border: 1.5px solid #111; width: 100%; }
+    .title-bar { text-align: center; font-size: 13px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; padding: 6px 0; border-bottom: 1.5px solid #111; background: #052e16; color: #fff; }
+    .firm-row { display: table; width: 100%; border-collapse: collapse; border-bottom: 1px solid #111; }
+    .firm-left  { display: table-cell; width: 60%; padding: 9px 11px; border-right: 1px solid #111; vertical-align: top; }
+    .firm-right { display: table-cell; width: 40%; padding: 9px 11px; vertical-align: top; text-align: right; }
+    .biz-name   { font-size: 13px; font-weight: 800; color: #052e16; }
+    .biz-detail { font-size: 10px; color: #374151; margin-top: 3px; line-height: 1.6; }
+    .meta-lbl   { font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; }
+    .meta-val   { font-size: 11px; font-weight: 700; margin-top: 2px; }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+    .tbl th { background: #052e16; color: #fff; padding: 5px 6px; font-size: 9.5px; font-weight: 700; border: 1px solid #111; text-align: left; word-wrap: break-word; }
+    .tbl td { padding: 4px 6px; border: 1px solid #ddd; vertical-align: top; word-wrap: break-word; }
+    .tbl tbody tr:last-child td { border-bottom: 1px solid #111; }
+    .tbl tfoot td { border: 1px solid #111; background: #f9fafb; font-weight: 700; }
+    .tr  { text-align: right; }
+    .fw  { font-weight: 800; }
+    .summary-row { display: table; width: 100%; border-collapse: collapse; border-top: 1.5px solid #111; }
+    .sum-cell { display: table-cell; padding: 8px 11px; text-align: center; border-right: 1px solid #ddd; }
+    .sum-cell:last-child { border-right: none; }
+    .sum-lbl { font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; }
+    .sum-val  { font-size: 13px; font-weight: 800; margin-top: 3px; }
+    .footer { padding: 7px 11px; font-size: 9px; color: #6b7280; border-top: 1px solid #ddd; text-align: center; }
+    @media print {
+      .no-print { display: none !important; }
+      body { font-size: 10px; }
+      .wrap { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+      .outer { width: 100% !important; border: 1.5px solid #111 !important; }
+      tr { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
+    }
+  </style>
+  <style id="page-size-style">@page { size: A4 portrait; margin: 8mm 10mm; }</style>
+  <script>
+    function setPaper(size) {
+      var style = document.getElementById('page-size-style');
+      var rules = {
+        'a4':     '@page { size: A4 portrait; margin: 8mm 10mm; }',
+        'a4-l':   '@page { size: A4 landscape; margin: 8mm 10mm; }',
+        'a5':     '@page { size: A5 portrait; margin: 6mm 8mm; }',
+        'letter': '@page { size: letter portrait; margin: 10mm 12mm; }',
+      };
+      style.textContent = rules[size] || rules['a4'];
+    }
+  <\/script>
+</head>
+<body>
+
+<div class="no-print print-controls">
+  <label for="paper-size">Paper Size:</label>
+  <select id="paper-size" onchange="setPaper(this.value)">
+    <option value="a4">A4 (Portrait)</option>
+    <option value="a4-l">A4 (Landscape)</option>
+    <option value="a5">A5</option>
+    <option value="letter">Letter</option>
+  </select>
+  <button class="btn-print" onclick="window.print()">🖨 Print Report</button>
+  <button class="btn-close" onclick="window.close()">Close</button>
+</div>
+
+<div class="wrap">
+  <div class="outer">
+
+    <!-- Title -->
+    <div class="title-bar">${title}</div>
+
+    <!-- Firm Info + Report Date -->
+    <div class="firm-row">
+      <div class="firm-left">
+        <div class="biz-name">${BUSINESS.name}</div>
+        <div class="biz-detail">
+          ${BUSINESS.address ? BUSINESS.address + '<br>' : ''}
+          ${BUSINESS.gstin   ? 'GSTIN: <b>' + BUSINESS.gstin + '</b>' : ''}
+          ${BUSINESS.phone   ? ' &nbsp;·&nbsp; Ph: ' + BUSINESS.phone : ''}
+        </div>
+      </div>
+      <div class="firm-right">
+        <div class="meta-lbl">Report Date</div>
+        <div class="meta-val">${today}</div>
+        <div class="meta-lbl" style="margin-top:8px">Total Parties</div>
+        <div class="meta-val">${rows.length}</div>
+      </div>
+    </div>
+
+    <!-- Summary strip -->
+    <div class="summary-row">
+      <div class="sum-cell">
+        <div class="sum-lbl">${isCustomer ? 'Total Sales' : 'Total Purchases'}</div>
+        <div class="sum-val">${fc(totalSales)}</div>
+      </div>
+      <div class="sum-cell">
+        <div class="sum-lbl">${isCustomer ? 'Payments Received' : 'Payments Sent'}</div>
+        <div class="sum-val" style="color:${isCustomer ? '#15803d' : '#dc2626'}">${fc(totalPaid)}</div>
+      </div>
+      <div class="sum-cell">
+        <div class="sum-lbl">Total Outstanding</div>
+        <div class="sum-val" style="color:${totalBalance > 0 ? (isCustomer ? '#b45309' : '#dc2626') : '#15803d'}">${fc(totalBalance)}</div>
+      </div>
+    </div>
+
+    <!-- Main table -->
+    <table class="tbl">
+      <thead><tr>${tableHeader}</tr></thead>
+      <tbody>${tableRows || '<tr><td colspan="7" style="text-align:center;padding:12px;color:#6b7280;">No records found</td></tr>'}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;font-weight:700;font-size:10px;">TOTALS</td>
+          <td class="tr">${fc(totalSales)}</td>
+          <td class="tr">${fc(totalPaid)}</td>
+          <td class="tr fw" style="color:${totalBalance > 0 ? (isCustomer ? '#b45309' : '#dc2626') : '#15803d'}">${fc(totalBalance)}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Footer note -->
+    <div class="footer">
+      Generated on ${today} &nbsp;·&nbsp; ${BUSINESS.name}
+      ${BUSINESS.gstin ? '&nbsp;·&nbsp; GSTIN: ' + BUSINESS.gstin : ''}
+      &nbsp;·&nbsp; All amounts in Indian Rupees (Rs.)
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=1100,height=820');
+  if (!win) { alert('Pop-up blocked. Please allow pop-ups for this site.'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+}

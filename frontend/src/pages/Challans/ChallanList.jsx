@@ -6,6 +6,7 @@ import { getChallans, deleteChallan } from '../../api/challans';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { printDeliveryChallan } from '../../utils/printChallan';
 import { useAuth } from '../../context/AuthContext';
+import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 
 /* ── Status config ──────────────────────────────────────────── */
 const STATUS_META = {
@@ -128,6 +129,9 @@ export default function ChallanList() {
   const hasFilters = search || statusFilter || from || to;
   const pages = Math.ceil(total / LIMIT);
 
+  // Alt+N → New Challan
+  useKeyboardShortcut('alt+n', () => navigate('/challans/new'));
+
   return (
     <Layout title="Delivery Challans">
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={hide} key={toast.id} />}
@@ -146,9 +150,10 @@ export default function ChallanList() {
           className="btn btn-primary"
           style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, paddingInline: 20, fontSize: 14, fontWeight: 700 }}
           onClick={() => navigate('/challans/new')}
+          title="New Challan (Alt+N)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          New Challan
+          New Challan <kbd style={{fontSize:10,opacity:0.7,marginLeft:4,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
         </button>
       </div>
 

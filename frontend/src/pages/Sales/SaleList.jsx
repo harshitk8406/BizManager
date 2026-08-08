@@ -41,6 +41,8 @@ export default function SaleList() {
   useKeyboardShortcut('slash', () => {
     document.getElementById('sale-customer-filter')?.focus();
   });
+  // Alt+N → New Sale
+  useKeyboardShortcut('alt+n', () => navigate('/sales/new'));
   // Escape → clear filter if active
   useKeyboardShortcut('escape', () => { if (selectedCustomer) clearCustomerFilter(); });
 
@@ -141,8 +143,8 @@ export default function SaleList() {
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-secondary" onClick={handleExportCSV} disabled={sales.length === 0}>Export CSV</button>
           <button className="btn btn-secondary" onClick={handleExportExcel} disabled={sales.length === 0}>Export Excel</button>
-          <button className="btn btn-primary" onClick={() => navigate('/sales/new')}>
-            + New Sale
+          <button className="btn btn-primary" onClick={() => navigate('/sales/new')} title="New Sale (Alt+N)">
+            + New Sale <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
           </button>
         </div>
       </div>

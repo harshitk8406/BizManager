@@ -41,6 +41,8 @@ export default function PurchaseList() {
   useKeyboardShortcut('slash', () => {
     document.getElementById('purchase-supplier-filter')?.focus();
   });
+  // Alt+N → New Purchase
+  useKeyboardShortcut('alt+n', () => navigate('/purchases/new'));
   // Escape → clear filter if one is active (outside inputs)
   useKeyboardShortcut('escape', () => { if (selectedSupplier) clearSupplierFilter(); });
 
@@ -141,8 +143,8 @@ export default function PurchaseList() {
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-secondary" onClick={handleExportCSV} disabled={purchases.length === 0}>Export CSV</button>
           <button className="btn btn-secondary" onClick={handleExportExcel} disabled={purchases.length === 0}>Export Excel</button>
-          <button className="btn btn-primary" onClick={() => navigate('/purchases/new')}>
-            + New Purchase
+          <button className="btn btn-primary" onClick={() => navigate('/purchases/new')} title="New Purchase (Alt+N)">
+            + New Purchase <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
           </button>
         </div>
       </div>

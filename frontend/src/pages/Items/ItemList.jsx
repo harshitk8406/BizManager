@@ -37,6 +37,7 @@ export default function ItemList() {
   // Keyboard support
   const { getTableProps, getRowProps } = useTableKeyNav(items, (item) => openEdit(item));
   useKeyboardShortcut('slash', () => document.getElementById('item-search-input')?.focus());
+  useKeyboardShortcut('alt+n', () => { if (!modalOpen) openAdd(); }, { deps: [modalOpen] });
 
   const load = () => {
     setLoading(true);
@@ -113,7 +114,9 @@ export default function ItemList() {
             <span className="search-icon">&#x2315;</span>
             <input id="item-search-input" placeholder="Search items..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={openAdd}>+ Add Item</button>
+          <button className="btn btn-primary" onClick={openAdd} title="Add Item (Alt+N)">
+            + Add Item <kbd style={{fontSize:10,opacity:0.7,marginLeft:6,background:'rgba(255,255,255,0.2)',padding:'1px 5px',borderRadius:3}}>Alt+N</kbd>
+          </button>
         </div>
       </div>
 
