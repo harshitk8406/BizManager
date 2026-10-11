@@ -60,7 +60,7 @@ ${contextSummary}`;
     { role: 'user', content: message },
   ];
 
-  const reply = await groqChat({ messages, model: 'llama-3.1-8b-instant', maxTokens: 512, userId: req.user?._id });
+  const reply = await groqChat({ messages, maxTokens: 512, userId: req.user?._id });
   res.json({ success: true, data: { reply } });
 });
 
@@ -95,7 +95,7 @@ Do NOT include any text outside the JSON object.`
     }
   ];
 
-  const raw = await groqChat({ messages, model: 'llama-3.1-8b-instant', maxTokens: 200, userId: req.user?._id });
+  const raw = await groqChat({ messages, maxTokens: 200, userId: req.user?._id });
 
   let parsed;
   try {
@@ -170,7 +170,7 @@ ${historyText || 'No history available yet.'}`
     }
   ];
 
-  const raw = await groqChat({ messages, model: 'llama-3.1-8b-instant', maxTokens: 150, userId: req.user?._id });
+  const raw = await groqChat({ messages, maxTokens: 150, userId: req.user?._id });
 
   let result = { anomaly: false, warning: null };
   try {
@@ -235,7 +235,7 @@ Use Indian Rupee ₹ symbol. Be direct and helpful. Do NOT use bullet points or 
     }
   ];
 
-  const summary = await groqChat({ messages, model: 'llama-3.1-8b-instant', maxTokens: 350, userId: req.user?._id });
+  const summary = await groqChat({ messages, maxTokens: 350, userId: req.user?._id });
   aiCache.set(cacheKey, summary, TTL_DASHBOARD); // Cache 6 hours
   res.json({ success: true, data: { summary } });
 });
@@ -308,7 +308,7 @@ Rules:
           content: `Products: ${productDescParts.slice(0, 8).join('; ')}`
         }
       ];
-      productSentence = await groqChat({ messages: aiMessages, model: 'llama-3.1-8b-instant', maxTokens: 80, userId: req.user?._id });
+      productSentence = await groqChat({ messages: aiMessages, maxTokens: 80, userId: req.user?._id });
       productSentence = productSentence.trim().replace(/\.$/, '');
     } catch {
       productSentence = `We have provided you with ${productDescParts.slice(0, 3).map(p => p.split(' (')[0]).join(', ')}`;

@@ -5,7 +5,11 @@ try {
   console.warn('Failed to set DNS servers, falling back to system defaults:', e.message);
 }
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+if (!process.env.GROQ_API_KEY && process.env.APP_PATH) {
+  require('dotenv').config({ path: path.join(process.env.APP_PATH, 'backend', '.env') });
+}
 const app = require('./app');
 const connectDB = require('./src/config/db');
 

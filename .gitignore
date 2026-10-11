@@ -12,6 +12,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+build-backend/
+*.jsc
 out/
 
 # IDEs and editors

@@ -1,3 +1,4 @@
+require('bytenode');
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
@@ -11,6 +12,14 @@ function startBackend() {
   // Pass the app root path so backend can resolve frontend/dist correctly
   // even when running from inside an ASAR archive
   process.env.APP_PATH = app.getAppPath();
+
+  // Explicitly load .env from the backend folder inside app.asar
+  try {
+    const dotenv = require('dotenv');
+    dotenv.config({ path: path.join(app.getAppPath(), 'backend', '.env') });
+  } catch (e) {
+    console.warn('Failed to preload .env from app path:', e.message);
+  }
 
   console.log('Starting backend server inline...');
   try {
