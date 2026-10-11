@@ -41,6 +41,13 @@ app.use('/api/ai',       protect, requireFirm, require('./src/routes/ai'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
+app.get('/', (req, res) => res.json({
+  name: 'BizManager API',
+  version: '1.0.0',
+  status: 'running',
+  docs: '/api/health'
+}));
+
 // Note: Static file serving removed — Electron loads frontend/dist/index.html
 // directly via loadFile(). Express only handles /api/* routes.
 
