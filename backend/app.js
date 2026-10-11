@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
+const fs = require('fs');
 const { errorHandler } = require('./src/middleware/errorHandler');
 const { protect } = require('./src/middleware/authMiddleware');
 const { requireFirm } = require('./src/middleware/firmMiddleware');
@@ -26,6 +28,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/firms', require('./src/routes/firms'));
 
@@ -41,16 +44,31 @@ app.use('/api/ai',       protect, requireFirm, require('./src/routes/ai'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
-app.get('/', (req, res) => res.json({
-  name: 'BizManager API',
-  version: '1.0.0',
-  status: 'running',
-  docs: '/api/health'
-}));
+// ─── Serve React Frontend (for Render/web deployment) ────────
+// In Electron, the frontend is loaded via loadFile() and this block is skipped.
+// On Render (or any web server), the built frontend is served as static files.
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
 
-// Note: Static file serving removed — Electron loads frontend/dist/index.html
-// directly via loadFile(). Express only handles /api/* routes.
+if (fs.existsSync(frontendDist)) {
+  // Serve static assets (JS, CSS, images)
+  app.use(express.static(frontendDist));
+
+  // SPA catch-all: for any non-API route, return index.html
+  // This allows React Router to handle client-side navigation
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  // Fallback if frontend is not built (development or Electron-only context)
+  app.get('/', (req, res) => res.json({
+    name: 'BizManager API',
+    version: '1.0.0',
+    status: 'running',
+    note: 'Frontend not built. Run: npm run build-frontend'
+  }));
+}
 
 app.use(errorHandler);
 
 module.exports = app;
+

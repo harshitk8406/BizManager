@@ -1,7 +1,17 @@
 import axios from 'axios';
 
+// In Electron the frontend is loaded via file:// so we use the local Express server.
+// In a browser (Render deployment) we use a relative URL so both are served from the same domain.
+const getBaseURL = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+    return 'http://localhost:5000/api'; // Electron desktop app
+  }
+  return '/api'; // Browser / Render deployment (same domain)
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: getBaseURL(),
   headers: { 'Content-Type': 'application/json' },
 });
 
