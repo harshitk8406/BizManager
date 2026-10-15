@@ -2,9 +2,17 @@ const Item = require('../models/Item');
 const Purchase = require('../models/Purchase');
 const Sale = require('../models/Sale');
 const { asyncHandler } = require('../middleware/errorHandler');
+const cache = require('../utils/cache');
 
 /* ─── Stock Summary ────────────────────────────────────────── */
 const getStockSummary = asyncHandler(async (req, res) => {
+  const cacheKey = cache.keys.stockSummary(req.firmId);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   const items = await Item.find({ firm: req.firmId }).sort({ itemCode: 1 }).lean();
   const report = items.map((item) => ({
     itemCode: item.itemCode,
@@ -19,12 +27,23 @@ const getStockSummary = asyncHandler(async (req, res) => {
     amount: parseFloat((item.closingQuantity * item.purchasePrice).toFixed(2)),
   }));
   const totalValue = report.reduce((s, r) => s + r.amount, 0);
-  res.json({ success: true, data: report, totalValue: parseFloat(totalValue.toFixed(2)) });
+  const result = { success: true, data: report, totalValue: parseFloat(totalValue.toFixed(2)) };
+
+  await cache.set(cacheKey, result, cache.TTL.REPORT);
+  res.set('X-Cache', 'MISS');
+  res.json(result);
 });
 
 /* ─── Stock / Purchase Detail ──────────────────────────────── */
 const getStockDetail = asyncHandler(async (req, res) => {
   const { from, to, itemCode } = req.query;
+  const cacheKey = cache.keys.stockDetail(req.firmId, from, to, itemCode);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
@@ -60,12 +79,23 @@ const getStockDetail = asyncHandler(async (req, res) => {
     });
   });
   result.sort((a, b) => b.date - a.date);
-  res.json({ success: true, data: result, count: result.length });
+  const response = { success: true, data: result, count: result.length };
+
+  await cache.set(cacheKey, response, cache.TTL.REPORT);
+  res.set('X-Cache', 'MISS');
+  res.json(response);
 });
 
 /* ─── Sales Detail ─────────────────────────────────────────── */
 const getSalesDetail = asyncHandler(async (req, res) => {
   const { from, to, itemCode } = req.query;
+  const cacheKey = cache.keys.salesDetail(req.firmId, from, to, itemCode);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
@@ -102,12 +132,23 @@ const getSalesDetail = asyncHandler(async (req, res) => {
     });
   });
   result.sort((a, b) => b.date - a.date);
-  res.json({ success: true, data: result, count: result.length });
+  const response = { success: true, data: result, count: result.length };
+
+  await cache.set(cacheKey, response, cache.TTL.REPORT);
+  res.set('X-Cache', 'MISS');
+  res.json(response);
 });
 
 /* ─── GSTR-1 (Outward Supplies) ────────────────────────────── */
 const getGSTR1 = asyncHandler(async (req, res) => {
   const { from, to } = req.query;
+  const cacheKey = cache.keys.gstr1(req.firmId, from, to);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
@@ -121,7 +162,7 @@ const getGSTR1 = asyncHandler(async (req, res) => {
   const b2bSales = sales.filter(s => s.customerGST && s.customerGST !== 'CASH');
   const b2cSales = sales.filter(s => !s.customerGST || s.customerGST === 'CASH');
 
-  // B2B — grouped by customer GSTIN, with each invoice listed
+  // B2B — grouped by customer GSTIN
   const b2bMap = {};
   b2bSales.forEach(sale => {
     const key = sale.customerGST;
@@ -169,7 +210,7 @@ const getGSTR1 = asyncHandler(async (req, res) => {
     })),
   };
 
-  // HSN-wise summary from all sales
+  // HSN-wise summary
   const hsnMap = {};
   sales.forEach(sale => {
     (sale.items || []).forEach(item => {
@@ -197,12 +238,23 @@ const getGSTR1 = asyncHandler(async (req, res) => {
     grandTotal:   sales.reduce((s, x) => s + (x.totalAmount || 0), 0),
   };
 
-  res.json({ success: true, data: { period: { from, to }, b2b: Object.values(b2bMap), b2c, hsnSummary: Object.values(hsnMap), totals } });
+  const response = { success: true, data: { period: { from, to }, b2b: Object.values(b2bMap), b2c, hsnSummary: Object.values(hsnMap), totals } };
+
+  await cache.set(cacheKey, response, cache.TTL.REPORT);
+  res.set('X-Cache', 'MISS');
+  res.json(response);
 });
 
 /* ─── GSTR-3B (Summary Return) ─────────────────────────────── */
 const getGSTR3B = asyncHandler(async (req, res) => {
   const { from, to } = req.query;
+  const cacheKey = cache.keys.gstr3b(req.firmId, from, to);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   let matchStage = { firm: req.firmId };
   if (from || to) {
     matchStage.date = {};
@@ -271,15 +323,36 @@ const getGSTR3B = asyncHandler(async (req, res) => {
   };
   net.total = parseFloat((net.cgst + net.sgst + net.igst).toFixed(2));
 
-  // Round all values to 2dp
   const r2 = (v) => parseFloat((v || 0).toFixed(2));
-  const roundSection = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v === 'object' ? roundSection(v) : r2(v)]));
+  const roundSection = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, typeof v === 'object' ? roundSection(v) : r2(v)])
+  );
 
-  res.json({ success: true, data: { period: { from, to }, outward: roundSection(outward), itc: roundSection(itc), net, counts: { sales: sales.length, purchases: purchases.length } } });
+  const response = {
+    success: true,
+    data: {
+      period: { from, to },
+      outward: roundSection(outward),
+      itc:     roundSection(itc),
+      net,
+      counts: { sales: sales.length, purchases: purchases.length }
+    }
+  };
+
+  await cache.set(cacheKey, response, cache.TTL.REPORT);
+  res.set('X-Cache', 'MISS');
+  res.json(response);
 });
 
 /* ─── Dashboard ─────────────────────────────────────────────── */
 const getDashboardStats = asyncHandler(async (req, res) => {
+  const cacheKey = cache.keys.dashboard(req.firmId);
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const [items, recentPurchases, recentSales, monthlyPurchasesList, monthlySalesList] = await Promise.all([
@@ -289,11 +362,28 @@ const getDashboardStats = asyncHandler(async (req, res) => {
     Purchase.find({ date: { $gte: startOfMonth }, firm: req.firmId }).lean(),
     Sale.find({ date: { $gte: startOfMonth }, firm: req.firmId }).lean(),
   ]);
-  const totalStockValue = items.reduce((s, i) => s + i.closingQuantity * i.purchasePrice, 0);
-  const lowStockItems   = items.filter((i) => i.closingQuantity <= 0).length;
+
+  const totalStockValue  = items.reduce((s, i) => s + i.closingQuantity * i.purchasePrice, 0);
+  const lowStockItems    = items.filter((i) => i.closingQuantity <= 0).length;
   const monthlyPurchases = monthlyPurchasesList.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
-  const monthlySales = monthlySalesList.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-  res.json({ success: true, data: { totalItems: items.length, totalStockValue: parseFloat(totalStockValue.toFixed(2)), lowStockItems, monthlyPurchases: parseFloat(monthlyPurchases.toFixed(2)), monthlySales: parseFloat(monthlySales.toFixed(2)), recentPurchases, recentSales } });
+  const monthlySales     = monthlySalesList.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+
+  const result = {
+    success: true,
+    data: {
+      totalItems: items.length,
+      totalStockValue: parseFloat(totalStockValue.toFixed(2)),
+      lowStockItems,
+      monthlyPurchases: parseFloat(monthlyPurchases.toFixed(2)),
+      monthlySales:     parseFloat(monthlySales.toFixed(2)),
+      recentPurchases,
+      recentSales,
+    }
+  };
+
+  await cache.set(cacheKey, result, cache.TTL.DASHBOARD);
+  res.set('X-Cache', 'MISS');
+  res.json(result);
 });
 
 module.exports = { getStockSummary, getStockDetail, getSalesDetail, getGSTR1, getGSTR3B, getDashboardStats };

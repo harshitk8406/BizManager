@@ -4,6 +4,7 @@ const Item = require('../models/Item');
 const Customer = require('../models/Customer');
 const { asyncHandler, createError } = require('../middleware/errorHandler');
 const { calculateItemAmount } = require('../utils/gst');
+const cache = require('../utils/cache');
 
 const recalculateStock = async (itemId, firmId) => {
   const item = await Item.findOne({ _id: itemId, firm: firmId });
@@ -141,6 +142,9 @@ const createSale = asyncHandler(async (req, res) => {
   await Promise.all([...new Set(items.map((i) => i.item))].map(id => recalculateStock(id, req.firmId)));
   await updateItemSalesPrice(items, req.firmId);
 
+  // Invalidate all firm-level cache (reports, dashboard, stock summary, etc.)
+  await cache.invalidateFirm(req.firmId);
+
   res.status(201).json({ success: true, data: sale });
 });
 
@@ -179,6 +183,9 @@ const updateSale = asyncHandler(async (req, res) => {
   await Promise.all(allItemIds.map(id => recalculateStock(id, req.firmId)));
   await updateItemSalesPrice(items, req.firmId);
 
+  // Invalidate all firm-level cache
+  await cache.invalidateFirm(req.firmId);
+
   const updated = await Sale.findOne({ _id: req.params.id, firm: req.firmId }).populate('customer').lean();
   res.json({ success: true, data: updated });
 });
@@ -190,6 +197,9 @@ const deleteSale = asyncHandler(async (req, res) => {
   const itemIds = sale.items.map((i) => i.item.toString());
   await Sale.findOneAndDelete({ _id: req.params.id, firm: req.firmId });
   await Promise.all(itemIds.map(id => recalculateStock(id, req.firmId)));
+
+  // Invalidate all firm-level cache
+  await cache.invalidateFirm(req.firmId);
 
   res.json({ success: true, message: 'Sale deleted successfully' });
 });

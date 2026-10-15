@@ -1,5 +1,6 @@
 const Customer = require('../models/Customer');
 const { asyncHandler, createError } = require('../middleware/errorHandler');
+const cache = require('../utils/cache');
 
 const getCustomers = asyncHandler(async (req, res) => {
   const { search } = req.query;
@@ -54,6 +55,9 @@ const createCustomer = asyncHandler(async (req, res) => {
   }
   const customerCode = await Customer.generateCustomerCode(req.firmId);
   const customer = await Customer.create({ ...req.body, firm: req.firmId, customerCode });
+
+  await cache.del(cache.keys.customers(req.firmId));
+
   res.status(201).json({ success: true, data: customer });
 });
 
@@ -65,12 +69,18 @@ const updateCustomer = asyncHandler(async (req, res) => {
   }
   const customer = await Customer.findOneAndUpdate({ _id: req.params.id, firm: req.firmId }, req.body, { new: true, runValidators: true });
   if (!customer) throw createError('Customer not found', 404);
+
+  await cache.del(cache.keys.customers(req.firmId));
+
   res.json({ success: true, data: customer });
 });
 
 const deleteCustomer = asyncHandler(async (req, res) => {
   const customer = await Customer.findOneAndDelete({ _id: req.params.id, firm: req.firmId });
   if (!customer) throw createError('Customer not found', 404);
+
+  await cache.del(cache.keys.customers(req.firmId));
+
   res.json({ success: true, message: 'Customer deleted successfully' });
 });
 

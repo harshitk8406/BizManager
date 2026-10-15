@@ -1,5 +1,6 @@
 const Item = require('../models/Item');
 const { asyncHandler, createError } = require('../middleware/errorHandler');
+const cache = require('../utils/cache');
 
 const getItems = asyncHandler(async (req, res) => {
   const { search, limit } = req.query;
@@ -61,6 +62,10 @@ const createItem = asyncHandler(async (req, res) => {
     closingQuantity: openingQuantity,
     ...rest,
   });
+
+  // Bust items list and stock-related report caches
+  await cache.invalidateFirm(req.firmId);
+
   res.status(201).json({ success: true, data: item });
 });
 
@@ -71,12 +76,18 @@ const updateItem = asyncHandler(async (req, res) => {
     { new: true, runValidators: true }
   );
   if (!item) throw createError('Item not found', 404);
+
+  await cache.invalidateFirm(req.firmId);
+
   res.json({ success: true, data: item });
 });
 
 const deleteItem = asyncHandler(async (req, res) => {
   const item = await Item.findOneAndDelete({ itemCode: req.params.code, firm: req.firmId });
   if (!item) throw createError('Item not found', 404);
+
+  await cache.invalidateFirm(req.firmId);
+
   res.json({ success: true, message: 'Item deleted successfully' });
 });
 
