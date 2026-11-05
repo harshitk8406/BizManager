@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
+import EmailVerifier from '../../components/UI/EmailVerifier';
 import './Auth.css';
 
 const SelectFirm = () => {
@@ -14,6 +15,8 @@ const SelectFirm = () => {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [gstin, setGstin] = useState('');
+  const [email, setEmail] = useState('');
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [error, setError] = useState('');
 
 
@@ -31,9 +34,22 @@ const SelectFirm = () => {
   const handleCreateFirm = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!email || !email.trim()) {
+      setError('Firm email address is mandatory.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await api.post('/firms', { name, address, gstin });
+      const res = await api.post('/firms', { 
+        name, 
+        address, 
+        gstin, 
+        email: email.trim().toLowerCase(),
+        isEmailVerified,
+        emailVerifiedAt: isEmailVerified ? new Date() : null
+      });
       await fetchFirms();
       selectFirm(res.data.data._id);
       navigate('/dashboard');
@@ -108,6 +124,22 @@ const SelectFirm = () => {
                 placeholder="22AAAAA0000A1Z5"
               />
             </div>
+
+            <EmailVerifier
+              value={email}
+              onChange={(val) => {
+                setEmail(val);
+                setIsEmailVerified(false);
+              }}
+              onVerifiedChange={(verified) => {
+                setIsEmailVerified(verified);
+              }}
+              isVerified={isEmailVerified}
+              required={true}
+              label="Firm Email Address"
+              placeholder="business@example.com"
+              inputClassName="auth-input"
+            />
             
             <div className="form-actions" style={{ display: 'flex', gap: '10px' }}>
               {firms.length > 0 && (

@@ -35,6 +35,7 @@ import StockDetailReport from './pages/Reports/StockDetailReport';
 import GSTReports from './pages/Reports/GSTReports';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
+import ForgotPassword from './pages/Auth/ForgotPassword';
 import SelectFirm from './pages/Auth/SelectFirm';
 import Landing from './pages/Landing/Landing';
 import PaymentList from './pages/Payments/PaymentList';
@@ -57,6 +58,7 @@ export default function App() {
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         
         {/* Protected Route - Firm Selection (Does not require active firm) */}
         <Route path="/select-firm" element={<ProtectedRoute requireFirm={false}><SelectFirm /></ProtectedRoute>} />

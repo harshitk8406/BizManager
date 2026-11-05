@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
+import EmailVerifier from '../../components/UI/EmailVerifier';
+import { verifyBusinessEmail } from '../../api/emailVerification';
 
 const STATE_CODES = {
   "Rajasthan": "08",
@@ -62,6 +64,7 @@ const Register = () => {
   const [gstin, setGstin] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [state, setState] = useState('Rajasthan');
   const [stateCode, setStateCode] = useState('08');
 
@@ -152,7 +155,30 @@ const Register = () => {
       }
     }
 
+    if (!email || !email.trim()) {
+      setError('Business Email Address is mandatory.');
+      return;
+    }
+
     setLoading(true);
+
+    // Ensure email genuinely exists before registration
+    let emailVerifiedFlag = isEmailVerified;
+    if (!emailVerifiedFlag) {
+      try {
+        const verifyRes = await verifyBusinessEmail(email.trim());
+        if (!verifyRes.data.valid) {
+          setError(`Invalid Email: ${verifyRes.data.reason}`);
+          setLoading(false);
+          return;
+        }
+        emailVerifiedFlag = true;
+        setIsEmailVerified(true);
+      } catch (verifyErr) {
+        console.warn('Email verification check error:', verifyErr.message);
+      }
+    }
+
     try {
       const registrationData = {
         name: name.trim(),
@@ -164,6 +190,7 @@ const Register = () => {
         gstin: gstin.trim().toUpperCase(),
         phone: phone.trim(),
         email: email.trim().toLowerCase(),
+        isEmailVerified: emailVerifiedFlag,
         state,
         stateCode
       };
@@ -622,16 +649,21 @@ const Register = () => {
             </div>
 
             <div className="input-group">
-              <label>Email Address</label>
-              <div className="input-wrapper">
-                <input
-                  className="input-field"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="business@example.com"
-                />
-              </div>
+              <EmailVerifier
+                value={email}
+                onChange={(val) => {
+                  setEmail(val);
+                  setIsEmailVerified(false);
+                }}
+                onVerifiedChange={(verified) => {
+                  setIsEmailVerified(verified);
+                }}
+                isVerified={isEmailVerified}
+                required={true}
+                label="Email Address"
+                placeholder="business@example.com"
+                inputClassName="input-field"
+              />
             </div>
 
             <div className="input-group">

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Layout from '../../components/Layout/Layout';
 import Toast, { useToast } from '../../components/UI/Toast';
+import EmailVerifier from '../../components/UI/EmailVerifier';
 
 const STATE_CODES = {
   "Rajasthan": "08",
@@ -62,6 +63,7 @@ export default function Profile() {
   const [gstin, setGstin] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [state, setState] = useState('');
   const [stateCode, setStateCode] = useState('');
 
@@ -80,6 +82,7 @@ export default function Profile() {
       setGstin(activeFirm.gstin || '');
       setPhone(activeFirm.phone || '');
       setEmail(activeFirm.email || '');
+      setIsEmailVerified(!!activeFirm.isEmailVerified);
       setState(activeFirm.state || 'Rajasthan');
       setStateCode(activeFirm.stateCode || '08');
     }
@@ -120,6 +123,11 @@ export default function Profile() {
       return;
     }
 
+    if (!email || !email.trim()) {
+      show('Firm Email Address is mandatory.', 'error');
+      return;
+    }
+
     if (gstin && gstin.trim() !== '') {
       const gstinVal = gstin.trim().toUpperCase();
       const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -150,6 +158,8 @@ export default function Profile() {
         gstin: gstin.trim().toUpperCase(),
         phone: phone.trim(),
         email: email.trim().toLowerCase(),
+        isEmailVerified,
+        emailVerifiedAt: isEmailVerified ? (activeFirm?.emailVerifiedAt || new Date()) : null,
         state,
         stateCode
       });
@@ -312,16 +322,24 @@ export default function Profile() {
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '16px' }}>
-                  <label className="form-label">Email Address</label>
-                  <input 
-                    type="email" 
-                    className="form-control" 
-                    value={email} 
-                    onChange={(e) => setEmail(e.target.value)} 
-                    placeholder="business@example.com" 
-                  />
-                </div>
+                <EmailVerifier
+                  value={email}
+                  onChange={(val) => {
+                    setEmail(val);
+                    if (val !== activeFirm?.email) {
+                      setIsEmailVerified(false);
+                    }
+                  }}
+                  onVerifiedChange={(verified) => {
+                    setIsEmailVerified(verified);
+                  }}
+                  isVerified={isEmailVerified}
+                  required={true}
+                  firmId={activeFirm?._id}
+                  label="Email Address"
+                  placeholder="business@example.com"
+                  inputClassName="form-control"
+                />
 
                 <div className="form-group" style={{ marginBottom: '20px' }}>
                   <label className="form-label">Business Address</label>
