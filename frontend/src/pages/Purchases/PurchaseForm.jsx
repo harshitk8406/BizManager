@@ -314,26 +314,33 @@ export default function PurchaseForm() {
 
   /* ── Line management ────────────────────────────────────────── */
   const updateLine = (idx, key, value) => {
-    const n = [...lines]; n[idx] = { ...n[idx], [key]: value }; setLines(n);
+    setLines(prev => { const n = [...prev]; n[idx] = { ...n[idx], [key]: value }; return n; });
   };
-  const addLine = () => {
-    setLines([...lines, { ...EMPTY_ITEM }]);
-    setItemQueries([...itemQueries, '']);
-  };
+  const addLine = useCallback(() => {
+    setLines(prev => [...prev, { ...EMPTY_ITEM }]);
+    setItemQueries(prev => [...prev, '']);
+  }, []);
   const removeLine = (idx) => {
     if (lines.length === 1) return;
-    setLines(lines.filter((_, i) => i !== idx));
-    setItemQueries(itemQueries.filter((_, i) => i !== idx));
+    setLines(prev => prev.filter((_, i) => i !== idx));
+    setItemQueries(prev => prev.filter((_, i) => i !== idx));
   };
 
   /* ── Tab key handler for table rows ────────────────────────── */
   const handleRowTab = useCallback((e, idx, isLastField) => {
-    if (e.key === 'Tab' && !e.shiftKey && isLastField && idx === lines.length - 1) {
-      e.preventDefault();
-      addLine();
-      setTimeout(() => document.getElementById(`pitem-${idx + 1}`)?.focus(), 50);
+    if (e.key === 'Tab' && !e.shiftKey && isLastField) {
+      setLines(prev => {
+        if (idx !== prev.length - 1) return prev; // not last row, do nothing
+        e.preventDefault();
+        setTimeout(() => document.getElementById(`pitem-${idx + 1}`)?.focus(), 50);
+        return [...prev, { ...EMPTY_ITEM }];
+      });
+      setItemQueries(prev => {
+        if (idx !== prev.length - 1) return prev;
+        return [...prev, ''];
+      });
     }
-  }, [lines.length]);
+  }, []);
 
   /* ── Totals ─────────────────────────────────────────────────── */
   const getTotals = () => {

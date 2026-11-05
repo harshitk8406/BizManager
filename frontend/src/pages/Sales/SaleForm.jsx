@@ -394,12 +394,15 @@ export default function SaleForm() {
 
   /* ── Tab key handler for table rows ────────────────────────── */
   const handleRowTab = useCallback((e, idx, isLastField) => {
-    if (e.key === 'Tab' && !e.shiftKey && isLastField && idx === lines.length - 1) {
-      e.preventDefault();
-      addLine();
-      setTimeout(() => document.getElementById(`sitem-${idx + 1}`)?.focus(), 50);
+    if (e.key === 'Tab' && !e.shiftKey && isLastField) {
+      setLines(prev => {
+        if (idx !== prev.length - 1) return prev; // not last row, do nothing
+        e.preventDefault();
+        setTimeout(() => document.getElementById(`sitem-${idx + 1}`)?.focus(), 50);
+        return [...prev, EMPTY_ITEM()];
+      });
     }
-  }, [lines.length]);
+  }, []);
 
   /* ── Totals ─────────────────────────────────────────────────── */
   const getTotals = () => {
