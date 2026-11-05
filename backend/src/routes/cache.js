@@ -1,9 +1,9 @@
 /**
  * ─── Cache Admin Routes ───────────────────────────────────────────────────────
  *
- * Protected admin endpoints to inspect and manage the cache at runtime.
+ * Protected admin endpoints to inspect and manage the in-memory cache.
  *
- * GET  /api/cache/stats          → returns cache type, size, TTL constants
+ * GET  /api/cache/stats          → returns cache size and TTL constants
  * POST /api/cache/invalidate     → clears all cache for the current firm
  * POST /api/cache/flush          → flushes the ENTIRE cache (all firms)
  */
@@ -22,7 +22,7 @@ router.get('/stats', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      backend:     cache.isRedis ? 'redis' : 'memory',
+      backend:     'memory',
       totalKeys:   size,
       ttl: {
         dashboard: `${cache.TTL.DASHBOARD}s (${cache.TTL.DASHBOARD / 60} min)`,
@@ -38,7 +38,6 @@ router.get('/stats', asyncHandler(async (req, res) => {
 /**
  * POST /api/cache/invalidate
  * Clears all cached data for the currently authenticated firm.
- * Useful after a bulk import or data correction.
  */
 router.post('/invalidate', asyncHandler(async (req, res) => {
   await cache.invalidateFirm(req.firmId);

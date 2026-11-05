@@ -1,8 +1,8 @@
 /**
  * ─── BizManager Cache Layer ───────────────────────────────────────────────────
  *
- * Provides a unified cache interface that automatically falls back to an
- * in-memory TTL cache when Redis is unavailable (e.g. Electron desktop mode).
+ * Simple in-memory TTL cache (no Redis dependency).
+ * Auto-evicts expired entries to prevent memory growth.
  *
  * Usage:
  *   const cache = require('./cache');
@@ -11,7 +11,6 @@
  *   await cache.del('key')
  *   await cache.delByPattern('biz:firmId:*')
  *   await cache.flush()
- *   cache.isRedis   // true if backed by Redis
  *
  * Key Naming Convention (always use these helpers):
  *   cache.keys.dashboard(firmId)
@@ -23,8 +22,6 @@
  *   cache.keys.customers(firmId)
  *   cache.keys.items(firmId)
  */
-
-const Redis = require('ioredis');
 
 // ─── TTL constants (seconds) ──────────────────────────────────────────────────
 const TTL = {
@@ -48,7 +45,7 @@ const keys = {
   firmPattern:  (f)              => `biz:${f}:*`,
 };
 
-// ─── In-Memory Fallback ───────────────────────────────────────────────────────
+// ─── In-Memory Cache ──────────────────────────────────────────────────────────
 class MemoryCache {
   constructor() {
     this._store = new Map();
@@ -88,79 +85,11 @@ class MemoryCache {
   }
 }
 
-// ─── Redis Adapter ────────────────────────────────────────────────────────────
-class RedisCache {
-  constructor(client) { this._client = client; }
-
-  async get(key) {
-    const raw = await this._client.get(key);
-    if (!raw) return null;
-    try { return JSON.parse(raw); } catch { return raw; }
-  }
-
-  async set(key, value, ttlSeconds = 300) {
-    await this._client.setex(key, ttlSeconds, JSON.stringify(value));
-  }
-
-  async del(key) { await this._client.del(key); }
-
-  async delByPattern(pattern) {
-    // Use SCAN to avoid blocking KEYS in production
-    let cursor = '0';
-    do {
-      const [nextCursor, found] = await this._client.scan(
-        cursor, 'MATCH', pattern, 'COUNT', 100
-      );
-      cursor = nextCursor;
-      if (found.length) await this._client.del(...found);
-    } while (cursor !== '0');
-  }
-
-  async flush() { await this._client.flushdb(); }
-
-  async size() { return this._client.dbsize(); }
-}
-
-// ─── Bootstrap ───────────────────────────────────────────────────────────────
-let cacheImpl = new MemoryCache();
-let isRedis   = false;
-
-const REDIS_URL = process.env.REDIS_URL;
-
-if (REDIS_URL) {
-  const client = new Redis(REDIS_URL, {
-    lazyConnect:          false,
-    connectTimeout:       3000,
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue:   false,
-    retryStrategy:        () => null, // don't auto-retry so we fail fast
-  });
-
-  client.on('ready', () => {
-    cacheImpl = new RedisCache(client);
-    isRedis   = true;
-    console.log('[Cache] ✅ Redis connected:', REDIS_URL);
-  });
-
-  client.on('error', (err) => {
-    if (isRedis) {
-      console.warn('[Cache] ⚠️  Redis error — falling back to in-memory cache:', err.message);
-      cacheImpl = new MemoryCache();
-      isRedis   = false;
-    } else {
-      // Suppress noisy connection-refused spam
-      if (!err.message.includes('ECONNREFUSED')) {
-        console.warn('[Cache] Redis error:', err.message);
-      }
-    }
-  });
-} else {
-  console.log('[Cache] ℹ️  No REDIS_URL — using in-memory cache (Electron / dev mode)');
-}
+// ─── Singleton instance ───────────────────────────────────────────────────────
+const cacheImpl = new MemoryCache();
 
 // ─── Unified Public API ───────────────────────────────────────────────────────
 const cache = {
-  get isRedis()                     { return isRedis; },
   keys,
   TTL,
 

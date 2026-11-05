@@ -43,6 +43,7 @@ app.use('/api/challans', protect, requireFirm, require('./src/routes/challan'));
 app.use('/api/ai',       protect, requireFirm, require('./src/routes/ai'));
 app.use('/api/cache',   protect, requireFirm, require('./src/routes/cache'));
 
+
 app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Date() }));
 
 // ─── Serve React Frontend (for Render/web deployment) ────────
