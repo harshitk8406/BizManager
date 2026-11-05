@@ -8,13 +8,14 @@
     "install-backend": "cd backend && npm install",
     "install-frontend": "cd frontend && npm install --include=dev",
     "build-frontend": "cd frontend && npm run build",
+    "build-frontend-electron": "cd frontend && npm run build:electron",
     "build": "npm run install-backend && npm run install-frontend && npm run build-frontend",
     "start": "cd backend && node server.js",
     "render-build": "npm run install-frontend && npm run build-frontend && npm run install-backend",
     "render-start": "node backend/server.js",
     "electron-dev": "electron .",
     "build-protect": "node scripts/run-protect.js",
-    "dist": "npm run build-frontend && npm run build-protect && electron-builder"
+    "dist": "npm run build-frontend-electron && npm run build-protect && electron-builder"
   },
   "build": {
     "appId": "com.bizmanager.app",
